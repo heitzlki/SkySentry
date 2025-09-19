@@ -1,1 +1,2 @@
-*yolo
+app/ultralytics/yolov8m-oiv7.pt
+app/ultralytics/yolov10n.pt
