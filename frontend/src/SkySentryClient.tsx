@@ -140,19 +140,19 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
 
     dataChannelRef.current.onopen = () => {
       if (!isMountedRef.current) return;
-      console.log("Data channel opened");
+      // Removed frequent data channel opened log
       setStatus("connected");
     };
 
     dataChannelRef.current.onclose = () => {
-      console.log("Data channel closed");
+      // Removed frequent data channel closed log
     };
 
     // Handle incoming data channel
     peerConnectionRef.current.ondatachannel = (event) => {
       const channel = event.channel;
       channel.onmessage = (event) => {
-        console.log("Received P2P message:", event.data);
+        // Removed frequent P2P message log
       };
     };
 
@@ -189,7 +189,7 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
 
       wsRef.current.onopen = () => {
         if (!isMountedRef.current) return;
-        console.log("WebSocket connected");
+        // Removed frequent WebSocket connected log
         createPeerConnection();
         sendMessage("connection_status", {
           status: "connected",
@@ -210,7 +210,7 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
       wsRef.current.onclose = () => {
         if (!isMountedRef.current) return;
         setStatus("disconnected");
-        console.log("WebSocket disconnected");
+        // Removed frequent WebSocket disconnected log
         isInitializingRef.current = false;
       };
 
