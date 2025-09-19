@@ -1,15 +1,19 @@
 import { WebSocketServer } from "ws";
+import { MessageHandler } from "./messageHandler.js";
 
-// Message handler function to process incoming messages
-function msgHandler(message: string, clientId?: string) {
-  console.log(
-    `[MSG HANDLER] ${clientId ? `From ${clientId}: ` : ""}${message}`
-  );
-}
+const messageHandler = new MessageHandler();
 
 const wss = new WebSocketServer({ port: 8080 });
 
 console.log("WebRTC Signaling Server running on port 8080");
+
+// Log stats every 30 seconds
+setInterval(() => {
+  const stats = messageHandler.getStats();
+  console.log(
+    `[STATS] Total messages: ${stats.totalMessages}, Webcam frames: ${stats.webcamFrames}`
+  );
+}, 30000);
 
 wss.on("connection", (ws) => {
   const clientId = `Client-${Math.random().toString(36).substr(2, 9)}`;
@@ -17,11 +21,12 @@ wss.on("connection", (ws) => {
 
   ws.on("message", (message) => {
     try {
-      const data = JSON.parse(message.toString());
+      const messageString = message.toString();
+      const data = JSON.parse(messageString);
 
       // Handle WebRTC data channel messages
       if (data.type === "data-channel-message") {
-        msgHandler(data.payload, clientId);
+        messageHandler.handleMessage(messageString, clientId);
         return;
       }
 
@@ -35,6 +40,11 @@ wss.on("connection", (ws) => {
       });
     } catch (error) {
       console.error("Error parsing message:", error);
+      // Handle as raw binary data
+      const messageBuffer = Buffer.isBuffer(message)
+        ? message
+        : Buffer.from(message as ArrayBuffer);
+      messageHandler.handleMessage(messageBuffer, clientId);
     }
   });
 

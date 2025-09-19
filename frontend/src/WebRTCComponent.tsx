@@ -6,11 +6,22 @@ const WebRTCComponent: React.FC<WebRTCComponentProps> = () => {
   const [connectionStatus, setConnectionStatus] =
     useState<string>("Disconnected");
   const [messages, setMessages] = useState<string[]>([]);
+  const [webcamStatus, setWebcamStatus] = useState<string>("Not started");
+  const [isStreamingWebcam, setIsStreamingWebcam] = useState<boolean>(false);
+  const [dataChannelReady, setDataChannelReady] = useState<boolean>(false);
+  const [pendingMessages, setPendingMessages] = useState<number>(0);
 
   const wsRef = useRef<WebSocket | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const dataChannelRef = useRef<RTCDataChannel | null>(null);
   const intervalRef = useRef<number | null>(null);
+  const webcamIntervalRef = useRef<number | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const messageQueueRef = useRef<
+    Array<{ message: string | ArrayBuffer; type: "text" | "binary" }>
+  >([]);
 
   const configuration: RTCConfiguration = {
     iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
@@ -63,6 +74,20 @@ const WebRTCComponent: React.FC<WebRTCComponentProps> = () => {
     dataChannelRef.current.onopen = () => {
       console.log("Data channel opened");
       setConnectionStatus("Connected");
+      setDataChannelReady(true);
+      // Send any queued messages
+      const queueLength = messageQueueRef.current.length;
+      while (messageQueueRef.current.length > 0) {
+        const { message, type } = messageQueueRef.current.shift()!;
+        sendMessage(message, type);
+      }
+      if (queueLength > 0) {
+        setPendingMessages(0);
+        setMessages((prev) => [
+          ...prev,
+          `✅ Sent ${queueLength} queued messages`,
+        ]);
+      }
     };
 
     dataChannelRef.current.onmessage = (event) => {
@@ -72,6 +97,7 @@ const WebRTCComponent: React.FC<WebRTCComponentProps> = () => {
 
     dataChannelRef.current.onclose = () => {
       console.log("Data channel closed");
+      setDataChannelReady(false);
     };
 
     // Handle incoming data channel
@@ -152,22 +178,200 @@ const WebRTCComponent: React.FC<WebRTCComponentProps> = () => {
     }
   };
 
+  // Blackbox sendMessage function interface
+  const sendMessage = (
+    message: string | ArrayBuffer,
+    type: "text" | "binary" = "text"
+  ) => {
+    try {
+      if (
+        dataChannelRef.current &&
+        dataChannelRef.current.readyState === "open"
+      ) {
+        // Send via WebRTC data channel (peer-to-peer)
+        if (typeof message === "string") {
+          dataChannelRef.current.send(message);
+        } else {
+          dataChannelRef.current.send(message);
+        }
+
+        // Also send to server for logging via WebSocket (always do this)
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          const payload =
+            type === "binary"
+              ? `[Binary data: ${
+                  message instanceof ArrayBuffer ? message.byteLength : 0
+                } bytes]`
+              : message;
+
+          wsRef.current.send(
+            JSON.stringify({
+              type: "data-channel-message",
+              payload: payload,
+            })
+          );
+        }
+
+        const logMessage =
+          type === "binary"
+            ? `Sent binary data: ${
+                message instanceof ArrayBuffer ? message.byteLength : 0
+              } bytes`
+            : `Sent: ${message}`;
+
+        setMessages((prev) => [...prev, logMessage]);
+        return true;
+      } else {
+        // Data channel not ready, fallback to WebSocket only
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          const payload =
+            type === "binary"
+              ? `[Binary data: ${
+                  message instanceof ArrayBuffer ? message.byteLength : 0
+                } bytes]`
+              : message;
+
+          wsRef.current.send(
+            JSON.stringify({
+              type: "data-channel-message",
+              payload: payload,
+            })
+          );
+
+          const logMessage =
+            type === "binary"
+              ? `Sent binary data via WebSocket: ${
+                  message instanceof ArrayBuffer ? message.byteLength : 0
+                } bytes`
+              : `Sent via WebSocket: ${message}`;
+
+          setMessages((prev) => [...prev, logMessage]);
+          return true;
+        } else {
+          console.warn("Neither data channel nor WebSocket ready for sending");
+          // Queue the message if neither is ready
+          messageQueueRef.current.push({ message, type });
+          setPendingMessages((prev) => prev + 1);
+          return false;
+        }
+      }
+    } catch (error) {
+      console.error("Error sending message:", error);
+      return false;
+    }
+  };
+
+  // Initialize webcam
+  const initializeWebcam = async () => {
+    try {
+      setWebcamStatus("Requesting camera access...");
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 640, height: 480, frameRate: 30 },
+        audio: false,
+      });
+
+      streamRef.current = stream;
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play();
+      }
+
+      setWebcamStatus("Camera ready");
+      return true;
+    } catch (error) {
+      console.error("Error accessing webcam:", error);
+      setWebcamStatus(
+        `Camera error: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+      return false;
+    }
+  };
+
+  // Capture frame from webcam and send it
+  const captureAndSendFrame = () => {
+    if (!videoRef.current || !canvasRef.current || !streamRef.current) {
+      return;
+    }
+
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+
+    if (!ctx) return;
+
+    // Set canvas size to match video
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+
+    // Draw current video frame to canvas
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    // Convert canvas to blob and send
+    canvas.toBlob(
+      (blob) => {
+        if (blob) {
+          blob.arrayBuffer().then((buffer) => {
+            sendMessage(buffer, "binary");
+          });
+        }
+      },
+      "image/jpeg",
+      0.8
+    );
+  };
+
+  // Start streaming webcam frames
+  const startWebcamStreaming = async () => {
+    if (!streamRef.current) {
+      const success = await initializeWebcam();
+      if (!success) return;
+    }
+
+    setIsStreamingWebcam(true);
+    setWebcamStatus("Streaming...");
+
+    // Send frames every 100ms (10 FPS)
+    webcamIntervalRef.current = window.setInterval(() => {
+      captureAndSendFrame();
+    }, 100);
+  };
+
+  // Stop streaming webcam frames
+  const stopWebcamStreaming = () => {
+    setIsStreamingWebcam(false);
+    setWebcamStatus("Camera ready");
+
+    if (webcamIntervalRef.current) {
+      clearInterval(webcamIntervalRef.current);
+      webcamIntervalRef.current = null;
+    }
+  };
+
+  // Stop webcam completely
+  const stopWebcam = () => {
+    stopWebcamStreaming();
+
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+
+    setWebcamStatus("Not started");
+  };
+
   const startSendingMessages = () => {
     intervalRef.current = window.setInterval(() => {
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        const timestamp = new Date().toISOString();
-        const message = `Hi from browser ${timestamp}`;
-
-        // Send message to server via WebSocket for logging
-        wsRef.current.send(
-          JSON.stringify({
-            type: "data-channel-message",
-            payload: message,
-          })
-        );
-
-        setMessages((prev) => [...prev, `Sent: ${message}`]);
-      }
+      const timestamp = new Date().toISOString();
+      const message = `Hi from browser ${timestamp}`;
+      sendMessage(message);
     }, 1000);
   };
 
@@ -180,6 +384,7 @@ const WebRTCComponent: React.FC<WebRTCComponentProps> = () => {
 
   const cleanup = () => {
     stopSendingMessages();
+    stopWebcam();
     if (dataChannelRef.current) {
       dataChannelRef.current.close();
     }
@@ -195,8 +400,76 @@ const WebRTCComponent: React.FC<WebRTCComponentProps> = () => {
     <div>
       <h1>WebRTC Data Channel Test</h1>
       <p>
-        Status: <strong>{connectionStatus}</strong>
+        Connection Status: <strong>{connectionStatus}</strong>
       </p>
+      <p>
+        Data Channel:{" "}
+        <strong style={{ color: dataChannelReady ? "green" : "orange" }}>
+          {dataChannelReady ? "Ready" : "Not Ready"}
+        </strong>
+      </p>
+      <p>
+        Webcam Status: <strong>{webcamStatus}</strong>
+      </p>
+      {pendingMessages > 0 && (
+        <p style={{ color: "orange" }}>
+          Pending Messages: <strong>{pendingMessages}</strong> (will send via
+          WebSocket)
+        </p>
+      )}
+
+      <div style={{ marginBottom: "20px" }}>
+        <h3>Connection Info:</h3>
+        <p style={{ fontSize: "0.9em", color: "#666" }}>
+          💡 WebRTC data channel requires two peers. If you're testing alone,
+          messages will be sent via WebSocket fallback to the server for
+          logging. Open multiple browser tabs to test true peer-to-peer
+          communication.
+        </p>
+      </div>
+
+      <div style={{ marginBottom: "20px" }}>
+        <h3>Webcam Controls:</h3>
+        <button
+          onClick={initializeWebcam}
+          disabled={!!streamRef.current}
+          style={{ marginRight: "10px" }}
+        >
+          Initialize Camera
+        </button>
+        <button
+          onClick={startWebcamStreaming}
+          disabled={!streamRef.current || isStreamingWebcam}
+          style={{ marginRight: "10px" }}
+        >
+          Start Streaming
+        </button>
+        <button
+          onClick={stopWebcamStreaming}
+          disabled={!isStreamingWebcam}
+          style={{ marginRight: "10px" }}
+        >
+          Stop Streaming
+        </button>
+        <button onClick={stopWebcam} disabled={!streamRef.current}>
+          Stop Camera
+        </button>
+      </div>
+
+      <div style={{ marginBottom: "20px" }}>
+        <video
+          ref={videoRef}
+          style={{
+            width: "320px",
+            height: "240px",
+            border: "1px solid #ccc",
+            backgroundColor: "#000",
+          }}
+          muted
+          playsInline
+        />
+        <canvas ref={canvasRef} style={{ display: "none" }} />
+      </div>
 
       <div>
         <h3>Messages (last 10):</h3>
