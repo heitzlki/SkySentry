@@ -56,6 +56,9 @@ const wss = new WebSocketServer({ port: 8080 });
 
 console.log("SkySentry server running on port 8080");
 
+// Track WebSocket connections by clientId
+const clientConnections = new Map<string, any>();
+
 // Stats every 60 seconds
 setInterval(async () => {
   const stats = imageHandler.getStats();
@@ -68,16 +71,44 @@ setInterval(async () => {
 }, 60000);
 
 wss.on("connection", (ws) => {
-  const clientId = `Client-${Math.random().toString(36).substr(2, 9)}`;
-  console.log(`${clientId} connected`);
-
-  // Add client to Redis
-  imageHandler.addClient(clientId);
+  let clientId: string | null = null;
 
   ws.on("message", async (message) => {
     try {
       const messageString = message.toString();
       const data = JSON.parse(messageString);
+
+      // Handle client registration message (sent immediately on WebSocket open)
+      if (data.type === "client-registration") {
+        if (data.clientId && !clientId) {
+          clientId = data.clientId;
+          if (clientId) {
+            clientConnections.set(clientId, ws);
+            console.log(`${clientId} connected`);
+            await imageHandler.addClient(clientId);
+          }
+        }
+        return;
+      }
+
+      // Extract or register clientId from other messages
+      if (data.clientId && !clientId) {
+        clientId = data.clientId;
+        if (clientId) {
+          clientConnections.set(clientId, ws);
+          console.log(`${clientId} connected`);
+          // Add client to Redis
+          await imageHandler.addClient(clientId);
+        }
+      }
+
+      // If we still don't have a clientId, generate a fallback
+      if (!clientId) {
+        clientId = `Client-${Math.random().toString(36).substr(2, 9)}`;
+        clientConnections.set(clientId, ws);
+        console.log(`${clientId} connected (fallback ID)`);
+        await imageHandler.addClient(clientId);
+      }
 
       // Handle WebRTC data channel messages through blackbox
       if (data.type === "data-channel-message") {
@@ -158,6 +189,13 @@ wss.on("connection", (ws) => {
       await messageHandler.handleMessage(messageString, clientId);
     } catch (error) {
       // Handle as raw binary data
+      if (!clientId) {
+        clientId = `Client-${Math.random().toString(36).substr(2, 9)}`;
+        clientConnections.set(clientId, ws);
+        console.log(`${clientId} connected (binary fallback ID)`);
+        await imageHandler.addClient(clientId);
+      }
+
       const messageBuffer = Buffer.isBuffer(message)
         ? message
         : Buffer.from(message as ArrayBuffer);
@@ -166,12 +204,18 @@ wss.on("connection", (ws) => {
   });
 
   ws.on("close", () => {
-    console.log(`${clientId} disconnected`);
-    imageHandler.removeClient(clientId);
+    if (clientId) {
+      console.log(`${clientId} disconnected`);
+      clientConnections.delete(clientId);
+      imageHandler.removeClient(clientId);
+    }
   });
 
   ws.on("error", (error) => {
-    console.error(`${clientId} WebSocket error:`, error.message);
-    imageHandler.removeClient(clientId);
+    if (clientId) {
+      console.error(`${clientId} WebSocket error:`, error.message);
+      clientConnections.delete(clientId);
+      imageHandler.removeClient(clientId);
+    }
   });
 });

@@ -75,35 +75,39 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
     [clientId]
   );
 
-  const handleSignalingMessage = useCallback(async (data: any) => {
-    if (!peerConnectionRef.current || !isMountedRef.current) return;
+  const handleSignalingMessage = useCallback(
+    async (data: any) => {
+      if (!peerConnectionRef.current || !isMountedRef.current) return;
 
-    try {
-      switch (data.type) {
-        case "offer":
-          await peerConnectionRef.current.setRemoteDescription(data.payload);
-          const answer = await peerConnectionRef.current.createAnswer();
-          await peerConnectionRef.current.setLocalDescription(answer);
-          if (wsRef.current) {
-            wsRef.current.send(
-              JSON.stringify({
-                type: "answer",
-                payload: answer,
-              })
-            );
-          }
-          break;
-        case "answer":
-          await peerConnectionRef.current.setRemoteDescription(data.payload);
-          break;
-        case "ice-candidate":
-          await peerConnectionRef.current.addIceCandidate(data.payload);
-          break;
+      try {
+        switch (data.type) {
+          case "offer":
+            await peerConnectionRef.current.setRemoteDescription(data.payload);
+            const answer = await peerConnectionRef.current.createAnswer();
+            await peerConnectionRef.current.setLocalDescription(answer);
+            if (wsRef.current) {
+              wsRef.current.send(
+                JSON.stringify({
+                  type: "answer",
+                  payload: answer,
+                  clientId, // Add clientId to signaling messages
+                })
+              );
+            }
+            break;
+          case "answer":
+            await peerConnectionRef.current.setRemoteDescription(data.payload);
+            break;
+          case "ice-candidate":
+            await peerConnectionRef.current.addIceCandidate(data.payload);
+            break;
+        }
+      } catch (error) {
+        console.error("Error handling signaling message:", error);
       }
-    } catch (error) {
-      console.error("Error handling signaling message:", error);
-    }
-  }, []);
+    },
+    [clientId]
+  );
 
   const createOffer = useCallback(async () => {
     if (!peerConnectionRef.current || !isMountedRef.current) return;
@@ -117,13 +121,14 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
           JSON.stringify({
             type: "offer",
             payload: offer,
+            clientId, // Add clientId to offer messages
           })
         );
       }
     } catch (error) {
       console.error("Error creating offer:", error);
     }
-  }, []);
+  }, [clientId]);
 
   const createPeerConnection = useCallback(() => {
     if (peerConnectionRef.current || !isMountedRef.current) return;
@@ -163,6 +168,7 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
           JSON.stringify({
             type: "ice-candidate",
             payload: event.candidate,
+            clientId, // Add clientId to ICE candidate messages
           })
         );
       }
@@ -189,6 +195,18 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
 
       wsRef.current.onopen = () => {
         if (!isMountedRef.current) return;
+
+        // Send clientId immediately so backend can register us with the correct ID
+        if (wsRef.current) {
+          wsRef.current.send(
+            JSON.stringify({
+              type: "client-registration",
+              clientId: clientId,
+              timestamp: new Date().toISOString(),
+            })
+          );
+        }
+
         // Removed frequent WebSocket connected log
         createPeerConnection();
         sendMessage("connection_status", {
