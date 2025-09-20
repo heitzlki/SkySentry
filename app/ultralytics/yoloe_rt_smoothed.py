@@ -28,8 +28,8 @@ DEFAULT_OBJ_HEIGHTS_M = {
 }
 
 # ---------------- Smoothing knobs ----------------
-SMOOTH_HISTORY_FRAMES = 10    # use last N frames to compute average direction
-SMOOTH_PENALTY        = 0.65  # 0..1: fraction of perpendicular motion to suppress (higher = steadier)
+SMOOTH_HISTORY_FRAMES = 50    # use last N frames to compute average direction
+SMOOTH_PENALTY        = 0.96  # 0..1: fraction of perpendicular motion to suppress (higher = steadier)
 GAP_RESET_FRAMES      = 60    # if a track is unseen for ≥ this many frames, reset smoothing
 TELEPORT_THRESH_PX    = 300.0 # pixel jump that resets smoothing (center-based)
 TELEPORT_THRESH_M     = 1.5   # world jump (meters) that resets smoothing
@@ -209,103 +209,68 @@ class IdentityManager:
         self.inactive = [it for it in self.inactive if (frame_idx - it["last_frame"]) <= self.reid_max_frames]
         return idx_to_gid
 
-# ---------------- Direction-aware Smoother ----------------
+# ---------------- Direction-aware Smoother → Replaced with simple EMA ----------------
 class _TrackSmoother:
     """
-    Keeps short history per gid and returns direction-biased smoothed positions.
-    We smooth both pixel center (cx,cy) and world coords (Xw,Yw,Zw) when available.
+    Keeps short state per gid and returns exponentially smoothed positions (EMA).
+    We smooth both pixel center (cx,cy) and world coords (Xw,Yw) when available.
+
+    NOTE: This replaces the previous direction-aware smoother with a simple EMA.
     """
-    def __init__(self):
-        # gid -> state dict
-        self.state: Dict[int, Dict[str, Any]] = {}
-        # history deques
-        self.hist_px: Dict[int, deque] = {}   # deque[(frame_idx, cx, cy)]
-        self.hist_w:  Dict[int, deque] = {}   # deque[(frame_idx, Xw, Yw, Zw or None)]
+    def __init__(self, alpha_px: float = 0.4, alpha_w: float = 0.35):
+        # EMA coefficients (0..1], higher = follow raw more closely
+        self.alpha_px = float(alpha_px)
+        self.alpha_w  = float(alpha_w)
+        # gid -> (last_frame, sx, sy)
+        self.state_px: Dict[int, Tuple[int, float, float]] = {}
+        self.state_w:  Dict[int, Tuple[int, float, float]] = {}
 
     def reset_gid(self, gid: int):
-        self.state.pop(gid, None)
-        self.hist_px.pop(gid, None)
-        self.hist_w.pop(gid, None)
+        self.state_px.pop(gid, None)
+        self.state_w.pop(gid, None)
 
-    def _avg_dir_2d(self, q) -> Optional[np.ndarray]:
-        """Average unit direction over recent deltas in queue of (f,x,y)."""
-        if len(q) < 2:
-            return None
-        # use last up to N deltas
-        pts = list(q)[-SMOOTH_HISTORY_FRAMES:]
-        vec = np.zeros(2, np.float32)
-        for i in range(1, len(pts)):
-            _, x1, y1 = pts[i-1]
-            _, x2, y2 = pts[i]
-            d = np.array([x2 - x1, y2 - y1], np.float32)
-            n = np.linalg.norm(d)
-            if n > 1e-6:
-                vec += d / n
-        n = np.linalg.norm(vec)
-        if n < 1e-6:
-            return None
-        return vec / n
-
-    def _smooth_point(self, gid: int, frame_idx: int,
-                      raw_pt: Tuple[float, float],
-                      hist_map: Dict[int, deque],
-                      teleport_thresh: float) -> Tuple[float, float]:
-        """Generic 2D smoother working on (cx,cy) or (Xw,Yw)."""
+    def _ema_point(self,
+                   gid: int,
+                   frame_idx: int,
+                   raw_pt: Tuple[float, float],
+                   state_map: Dict[int, Tuple[int, float, float]],
+                   alpha: float,
+                   teleport_thresh: float) -> Tuple[float, float]:
         x, y = raw_pt
+        prev = state_map.get(gid)
 
-        q = hist_map.setdefault(gid, deque(maxlen=SMOOTH_HISTORY_FRAMES + 2))
-        # reset on big gaps
-        if q and (frame_idx - q[-1][0]) >= GAP_RESET_FRAMES:
-            q.clear()
+        # Seed if no history
+        if prev is None:
+            state_map[gid] = (frame_idx, float(x), float(y))
+            return float(x), float(y)
 
-        # teleport reset
-        if q:
-            _, px, py = q[-1]
-            if math.hypot(x - px, y - py) > teleport_thresh:
-                q.clear()
+        last_frame, sx_prev, sy_prev = prev
 
-        # if no history left, just seed and return raw
-        if not q:
-            q.append((frame_idx, x, y))
-            return x, y
+        # Reset on long gaps
+        if (frame_idx - last_frame) >= GAP_RESET_FRAMES:
+            state_map[gid] = (frame_idx, float(x), float(y))
+            return float(x), float(y)
 
-        # compute direction & decompose current motion relative to last point
-        _, px, py = q[-1]
-        d_avg = self._avg_dir_2d(q)
-        vx, vy = (x - px), (y - py)
+        # Reset on teleports
+        if math.hypot(x - sx_prev, y - sy_prev) > teleport_thresh:
+            state_map[gid] = (frame_idx, float(x), float(y))
+            return float(x), float(y)
 
-        if d_avg is None:
-            # not enough motion history; mild EMA towards raw
-            alpha = 0.5
-            sx = px + alpha * vx
-            sy = py + alpha * vy
-        else:
-            d = d_avg.astype(np.float32)
-            v = np.array([vx, vy], np.float32)
+        # EMA update
+        sx = (1.0 - alpha) * sx_prev + alpha * x
+        sy = (1.0 - alpha) * sy_prev + alpha * y
 
-            # parallel / perpendicular components
-            v_par_mag = float(np.dot(v, d))
-            v_par = d * v_par_mag
-            v_perp = v - v_par
-
-            # penalize perpendicular wobble
-            v_perp *= (1.0 - SMOOTH_PENALTY)
-
-            # assemble new smoothed point
-            sx, sy = (np.array([px, py], np.float32) + v_par + v_perp).tolist()
-
-        q.append((frame_idx, sx, sy))
+        state_map[gid] = (frame_idx, float(sx), float(sy))
         return float(sx), float(sy)
 
     def smooth_px(self, gid: int, frame_idx: int, cx: float, cy: float) -> Tuple[float, float]:
-        return self._smooth_point(gid, frame_idx, (cx, cy), self.hist_px, TELEPORT_THRESH_PX)
+        return self._ema_point(gid, frame_idx, (cx, cy), self.state_px, self.alpha_px, TELEPORT_THRESH_PX)
 
     def smooth_world(self, gid: int, frame_idx: int,
                      Xw: Optional[float], Yw: Optional[float]) -> Tuple[Optional[float], Optional[float]]:
         if Xw is None or Yw is None:
-            # if no world point, don't update world history
             return Xw, Yw
-        sx, sy = self._smooth_point(gid, frame_idx, (Xw, Yw), self.hist_w, TELEPORT_THRESH_M)
+        sx, sy = self._ema_point(gid, frame_idx, (Xw, Yw), self.state_w, self.alpha_w, TELEPORT_THRESH_M)
         return sx, sy
 
 # ---------------- Public Module Class ----------------
