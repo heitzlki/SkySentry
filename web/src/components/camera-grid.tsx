@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { RefreshCw, Play, Square } from "lucide-react";
-import { api } from "@/lib/api-client";
 
 interface CameraData {
   id: string;
@@ -32,12 +31,61 @@ export function CameraGrid() {
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectAttemptsRef = useRef<number>(0);
   const frameStatsRef = useRef<
     Record<
       string,
-      { lastFrameTime: number; frameCount: number; fpsHistory: number[] }
+      {
+        lastFrameTime: number;
+        frameCount: number;
+        fpsHistory: number[];
+        lastFrameTimestamp: string; // Track last frame timestamp to prevent out-of-order
+        lastProcessedTime: number; // Track when we last processed a frame
+        droppedFrames: number; // Track dropped frames for performance
+        connectionQuality: "good" | "poor" | "degraded"; // Track connection quality
+      }
     >
   >({});
+
+  // Dynamic FPS adjustment based on performance
+  const [currentDisplayFPS, setCurrentDisplayFPS] = useState(15);
+  const performanceCheckRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Adaptive frame processing rate - starts at 15 FPS, can adjust dynamically
+  const MIN_FRAME_INTERVAL = 1000 / currentDisplayFPS;
+
+  // Performance monitoring and dynamic adjustment
+  const adjustDisplayFPS = useCallback(() => {
+    const stats = Object.values(frameStatsRef.current);
+    if (stats.length === 0) return;
+
+    const avgDroppedFrames =
+      stats.reduce((sum, stat) => sum + stat.droppedFrames, 0) / stats.length;
+    const totalCameras = stats.length;
+
+    // Adjust FPS based on performance
+    let newFPS = currentDisplayFPS;
+
+    if (avgDroppedFrames > 5 && totalCameras > 2) {
+      // Many dropped frames with multiple cameras - reduce FPS
+      newFPS = Math.max(8, currentDisplayFPS - 2);
+    } else if (avgDroppedFrames < 1 && totalCameras <= 2) {
+      // Good performance with few cameras - can increase FPS
+      newFPS = Math.min(20, currentDisplayFPS + 1);
+    } else if (totalCameras > 4) {
+      // Many cameras - cap at lower FPS
+      newFPS = Math.min(12, currentDisplayFPS);
+    }
+
+    if (newFPS !== currentDisplayFPS) {
+      setCurrentDisplayFPS(newFPS);
+      console.log(
+        `📊 Adjusted display FPS to ${newFPS} (cameras: ${totalCameras}, avg dropped: ${avgDroppedFrames.toFixed(
+          1
+        )})`
+      );
+    }
+  }, [currentDisplayFPS]);
 
   // Calculate FPS for each camera
   const updateFrameStats = useCallback((clientId: string) => {
@@ -46,6 +94,10 @@ export function CameraGrid() {
       lastFrameTime: now,
       frameCount: 0,
       fpsHistory: [],
+      lastFrameTimestamp: "",
+      lastProcessedTime: 0,
+      droppedFrames: 0,
+      connectionQuality: "good" as const,
     };
 
     stats.frameCount++;
@@ -64,6 +116,17 @@ export function CameraGrid() {
       const avgFps =
         stats.fpsHistory.reduce((a, b) => a + b, 0) / stats.fpsHistory.length;
 
+      // Update connection quality based on FPS consistency
+      const fpsVariance =
+        Math.max(...stats.fpsHistory) - Math.min(...stats.fpsHistory);
+      if (avgFps < 5 || fpsVariance > 10) {
+        stats.connectionQuality = "poor";
+      } else if (avgFps < 10 || fpsVariance > 5) {
+        stats.connectionQuality = "degraded";
+      } else {
+        stats.connectionQuality = "good";
+      }
+
       setFrameStats((prev) => ({
         ...prev,
         [clientId]: {
@@ -80,123 +143,241 @@ export function CameraGrid() {
     frameStatsRef.current[clientId] = stats;
   }, []);
 
-  // WebSocket streaming connection
+  // WebSocket streaming connection with improved reconnection
   const connectWebSocket = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
     try {
-      // Connect to streaming server
-      const streamingUrl = `ws://localhost:8081`;
+      // Connect to the Golang server streaming endpoint using environment variable
+      const streamingUrl =
+        process.env.NEXT_PUBLIC_WS_STREAM_URL ||
+        "ws://localhost:8080/stream/ws";
       wsRef.current = new WebSocket(streamingUrl);
 
+      // Add connection timeout
+      const connectionTimeout = setTimeout(() => {
+        if (wsRef.current?.readyState === WebSocket.CONNECTING) {
+          wsRef.current.close();
+          console.log("⏰ WebSocket connection timeout");
+        }
+      }, 10000); // 10 second timeout
+
       wsRef.current.onopen = () => {
+        clearTimeout(connectionTimeout);
         console.log("Connected to streaming server");
         setError(null);
+        reconnectAttemptsRef.current = 0;
 
         // Clear reconnect timeout
         if (reconnectTimeoutRef.current) {
           clearTimeout(reconnectTimeoutRef.current);
           reconnectTimeoutRef.current = null;
         }
+
+        // Start performance monitoring
+        if (performanceCheckRef.current) {
+          clearInterval(performanceCheckRef.current);
+        }
+        performanceCheckRef.current = setInterval(adjustDisplayFPS, 5000); // Check every 5 seconds
       };
 
       wsRef.current.onmessage = (event) => {
         try {
-          const data = JSON.parse(event.data);
+          // Handle JSON messages from the Golang server
+          if (typeof event.data === "string") {
+            const data = JSON.parse(event.data);
 
-          if (data.type === "frame_update") {
-            const cameraData: CameraData = {
-              id: data.clientId,
-              image: `data:image/jpeg;base64,${data.frame}`,
-              timestamp: new Date(data.timestamp).toISOString(),
-              frameNumber: data.frameNumber,
-              size: data.size,
-              status: "online",
-            };
+            if (data.type === "frame_update") {
+              const now = Date.now();
+              const currentStats = frameStatsRef.current[data.clientId] || {
+                lastFrameTime: now,
+                frameCount: 0,
+                fpsHistory: [],
+                lastFrameTimestamp: "",
+                lastProcessedTime: 0,
+                droppedFrames: 0,
+                connectionQuality: "good" as const,
+              };
 
-            // Update camera data
-            setCameras((prev) => {
-              const existing = prev.find((cam) => cam.id === data.clientId);
-              if (existing) {
-                return prev.map((cam) =>
-                  cam.id === data.clientId ? cameraData : cam
-                );
-              } else {
-                return [...prev, cameraData];
+              // Rate limiting with dynamic FPS
+              const timeSinceLastProcessed =
+                now - currentStats.lastProcessedTime;
+              if (timeSinceLastProcessed < MIN_FRAME_INTERVAL * 0.9) {
+                // 90% of target interval
+                currentStats.droppedFrames++;
+                frameStatsRef.current[data.clientId] = currentStats;
+                return; // Silently drop - don't log every dropped frame
               }
-            });
 
-            // Update frame stats
-            updateFrameStats(data.clientId);
-            setLastUpdate(new Date());
+              // Check if this frame is newer than the last one we processed
+              if (currentStats.lastFrameTimestamp && data.timestamp) {
+                const newTimestamp = new Date(data.timestamp).getTime();
+                const lastTimestamp = new Date(
+                  currentStats.lastFrameTimestamp
+                ).getTime();
+
+                // Skip if this frame is older than the last one we processed
+                if (newTimestamp <= lastTimestamp) {
+                  return; // Silently drop out-of-order frames
+                }
+              }
+
+              // Update the last processed time
+              currentStats.lastProcessedTime = now;
+              currentStats.lastFrameTimestamp = data.timestamp;
+              frameStatsRef.current[data.clientId] = currentStats;
+
+              // Update camera data with new frame using functional update to prevent race conditions
+              setCameras((prevCameras) => {
+                const existingCameraIndex = prevCameras.findIndex(
+                  (camera) => camera.id === data.clientId
+                );
+
+                const updatedCamera = {
+                  id: data.clientId,
+                  image: data.image, // Already base64 encoded data URL
+                  status: "online" as const,
+                  timestamp: data.timestamp,
+                  size: data.size,
+                  frameNumber: data.stats?.frameCount || 0, // Use backend frame count
+                };
+
+                if (existingCameraIndex >= 0) {
+                  // Update existing camera
+                  const newCameras = [...prevCameras];
+                  newCameras[existingCameraIndex] = updatedCamera;
+
+                  // Update frame stats
+                  updateFrameStats(data.clientId);
+
+                  return newCameras;
+                } else {
+                  // Add new camera and initialize frame stats
+                  updateFrameStats(data.clientId);
+                  return [...prevCameras, updatedCamera];
+                }
+              });
+
+              setError(null);
+              setLastUpdate(new Date());
+            } else {
+              console.log("Received control message:", data);
+            }
           }
         } catch (error) {
-          console.error("Error parsing WebSocket message:", error);
+          console.error("Error handling WebSocket message:", error);
         }
       };
 
-      wsRef.current.onclose = () => {
-        console.log("Streaming connection closed");
+      wsRef.current.onclose = (event) => {
+        clearTimeout(connectionTimeout);
+        console.log(`Streaming connection closed (code: ${event.code})`);
 
-        // Attempt to reconnect after 2 seconds
-        if (isStreaming) {
+        // Stop performance monitoring
+        if (performanceCheckRef.current) {
+          clearInterval(performanceCheckRef.current);
+          performanceCheckRef.current = null;
+        }
+
+        // Implement exponential backoff for reconnection
+        if (isStreaming && reconnectAttemptsRef.current < 10) {
+          const delay = Math.min(
+            1000 * Math.pow(2, reconnectAttemptsRef.current),
+            30000
+          ); // Max 30 seconds
+          reconnectAttemptsRef.current++;
+
+          console.log(
+            `🔄 Attempting reconnection ${reconnectAttemptsRef.current}/10 in ${delay}ms`
+          );
+
           reconnectTimeoutRef.current = setTimeout(() => {
             connectWebSocket();
-          }, 2000);
+          }, delay);
+        } else if (reconnectAttemptsRef.current >= 10) {
+          setError(
+            "Connection lost. Too many reconnection attempts. Please refresh the page."
+          );
         }
       };
 
       wsRef.current.onerror = (error) => {
+        clearTimeout(connectionTimeout);
         console.error("WebSocket error:", error);
-        setError("Connection to streaming server failed");
+        setError(
+          "Connection to streaming server failed. Attempting to reconnect..."
+        );
       };
     } catch (error) {
       console.error("Failed to connect to streaming server:", error);
       setError("Failed to connect to streaming server");
     }
-  }, [isStreaming, updateFrameStats]);
+  }, [isStreaming, updateFrameStats, MIN_FRAME_INTERVAL, adjustDisplayFPS]);
 
-  // Fallback HTTP API fetch
+  // Fallback HTTP API fetch using Golang server (only when WebSocket is not active)
   const fetchCameras = useCallback(async () => {
     try {
-      // Try the new live endpoint first (from memory cache)
-      let response;
-      try {
-        response = await fetch("http://localhost:3001/api/cameras/live");
-        const data = await response.json();
+      // Use Golang server API endpoints with environment variable
+      const apiUrl =
+        process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api";
+      const response = await fetch(`${apiUrl}/clients`);
+      const clientsData = await response.json();
 
-        if (data.success && data.cached) {
-          setCameras(
-            data.cameras.map((camera: any) => ({
-              ...camera,
-              status: camera.status === "online" ? "online" : "offline",
-            }))
-          );
-          setError(null);
-          setLastUpdate(new Date());
-          return;
+      if (!clientsData.success) {
+        throw new Error("Failed to fetch clients");
+      }
+
+      // Fetch latest frame for each client
+      const cameraPromises = clientsData.clients.map(
+        async (clientId: string) => {
+          try {
+            const frameResponse = await fetch(
+              `${apiUrl}/clients/${clientId}/latest`
+            );
+            const frameData = await frameResponse.json();
+
+            if (frameData.success) {
+              return {
+                id: clientId,
+                image: frameData.image,
+                timestamp: frameData.timestamp,
+                frameNumber: frameData.stats?.frameCount || 0, // Use backend frame count
+                size: frameData.size || 0,
+                status: "online" as const,
+              };
+            } else {
+              return {
+                id: clientId,
+                image: null,
+                timestamp: null,
+                frameNumber: 0,
+                size: 0,
+                status: "offline" as const,
+              };
+            }
+          } catch {
+            return {
+              id: clientId,
+              image: null,
+              timestamp: null,
+              frameNumber: 0,
+              size: 0,
+              status: "offline" as const,
+            };
+          }
         }
-      } catch (liveError) {
-        console.log("Live endpoint unavailable, falling back to standard API");
-      }
+      );
 
-      // Fallback to standard API
-      response = await api.api.cameras.all.get();
+      const newCameras = await Promise.all(cameraPromises);
 
-      if (response.data?.success) {
-        setCameras(
-          response.data.cameras.map((camera: any) => ({
-            ...camera,
-            status: camera.status === "online" ? "online" : "offline",
-          }))
-        );
-        setError(null);
-        setLastUpdate(new Date());
-      } else {
-        setError(response.data?.error || "Failed to fetch cameras");
-      }
+      // Sort cameras by ID for consistent display order
+      const sortedCameras = newCameras.sort((a, b) => a.id.localeCompare(b.id));
+
+      setCameras(sortedCameras);
+      setError(null);
+      setLastUpdate(new Date());
     } catch (err) {
-      setError("Network error: Could not connect to server");
+      setError("Network error: Could not connect to Golang server");
       console.error("Failed to fetch cameras:", err);
     } finally {
       setLoading(false);
@@ -207,6 +388,24 @@ export function CameraGrid() {
   useEffect(() => {
     fetchCameras();
   }, [fetchCameras]);
+
+  // Only poll when NOT streaming via WebSocket
+  useEffect(() => {
+    let pollInterval: NodeJS.Timeout | null = null;
+
+    if (!isStreaming) {
+      // Only poll when WebSocket streaming is inactive
+      pollInterval = setInterval(() => {
+        fetchCameras();
+      }, 2000); // Slower polling when not actively streaming
+    }
+
+    return () => {
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
+    };
+  }, [isStreaming, fetchCameras]);
 
   // Handle streaming toggle
   const toggleStreaming = useCallback(() => {
@@ -231,11 +430,14 @@ export function CameraGrid() {
         // Clear frame stats
         setFrameStats({});
         frameStatsRef.current = {};
+
+        // Resume HTTP polling
+        fetchCameras();
       }
 
       return newStreaming;
     });
-  }, [connectWebSocket]);
+  }, [connectWebSocket, fetchCameras]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -245,6 +447,9 @@ export function CameraGrid() {
       }
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
+      }
+      if (performanceCheckRef.current) {
+        clearInterval(performanceCheckRef.current);
       }
     };
   }, []);

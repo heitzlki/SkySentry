@@ -15,13 +15,13 @@ function App() {
     <div className="App">
       <header className="App-header">
         <h1>SkySentry Capture Client</h1>
-        <p>High-Performance Real-Time Streaming</p>
+        <p>High-Performance Real-Time Streaming with Camera Selection</p>
       </header>
 
       <main>
         <SkySentryClient
           clientId={clientId}
-          autoStartCamera={true}
+          autoStartCamera={false} // Disabled by default - let users choose camera first
           frameRate={20} // Optimized for smooth streaming
         />
       </main>
