@@ -1,27 +1,15 @@
-# SkySentry Backend
+# Elysia with Bun runtime
 
-WebRTC signaling server using WebSockets.
-
-## Setup
-
+## Getting Started
+To get started with this template, simply paste this command into your terminal:
 ```bash
-bun install
+bun create elysia ./elysia-example
 ```
 
-## Run
-
+## Development
+To start the development server run:
 ```bash
-# Development mode (with hot reload)
 bun run dev
-
-# Production mode
-bun start
 ```
 
-The server will run on `ws://localhost:8080`
-
-## What it does
-
-- Acts as a WebRTC signaling server
-- Relays offer/answer/ICE candidate messages between peers
-- Logs all incoming WebRTC data channel messages
+Open http://localhost:3000/ with your browser to see the result.

@@ -1,22 +1,17 @@
 {
   "name": "backend",
-  "module": "index.ts",
-  "type": "module",
-  "private": true,
+  "version": "1.0.50",
   "scripts": {
-    "start": "bun run index.ts",
-    "dev": "bun --watch index.ts"
-  },
-  "devDependencies": {
-    "@types/bun": "latest"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "bun run --watch src/index.ts"
   },
   "dependencies": {
-    "@types/ws": "^8.18.1",
-    "redis": "^5.8.2",
-    "ws": "^8.18.3",
-    "zod": "^4.1.9"
-  }
+    "@elysiajs/swagger": "^1.1.6",
+    "elysia": "latest",
+    "redis": "^5.8.2"
+  },
+  "devDependencies": {
+    "bun-types": "latest"
+  },
+  "module": "src/index.js"
 }
