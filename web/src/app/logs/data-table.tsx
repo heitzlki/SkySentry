@@ -1,78 +1,26 @@
-"use client"
+'use client';
 
-import * as React from "react"
-import {
-  closestCenter,
-  DndContext,
-  KeyboardSensor,
-  MouseSensor,
-  TouchSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-  type UniqueIdentifier,
-} from "@dnd-kit/core"
-import { restrictToVerticalAxis } from "@dnd-kit/modifiers"
-import {
-  arrayMove,
-  SortableContext,
-  useSortable,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable"
-import { CSS } from "@dnd-kit/utilities"
-import {
-  IconChevronDown,
-  IconCircleCheckFilled,
-  IconDotsVertical,
-  IconGripVertical,
-  IconLayoutColumns,
-  IconLoader,
-  IconPlus,
-  IconMapPin,
-  IconTrash,
-  IconBell,
-  IconEye,
-  IconMap,
-  IconEdit,
-  IconSearch,
-  IconRefresh,
-} from "@tabler/icons-react"
+import * as React from 'react';
 import {
   ColumnDef,
   ColumnFiltersState,
   flexRender,
   getCoreRowModel,
-  getFacetedRowModel,
-  getFacetedUniqueValues,
   getFilteredRowModel,
   getSortedRowModel,
-  Row,
   SortingState,
   useReactTable,
   VisibilityState,
-} from "@tanstack/react-table"
-import { toast } from "sonner"
-import { z } from "zod"
-
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
+} from '@tanstack/react-table';
+import { z } from 'zod';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+} from '@/components/ui/dropdown-menu';
 import {
   Table,
   TableBody,
@@ -80,796 +28,502 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table"
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs"
+} from '@/components/ui/table';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog"
+} from '@/components/ui/dialog';
+import {
+  Status,
+  StatusIndicator,
+  StatusLabel,
+} from '@/components/ui/shadcn-io/status';
+import {
+  IconChevronDown,
+  IconEye,
+  IconLayoutColumns,
+} from '@tabler/icons-react';
 
-function DetectionDetailDialog({ detection }: { detection: z.infer<typeof schema> }) {
-  const [open, setOpen] = React.useState(false)
+// Define the detection schema based on your data structure
+export const detectionSchema = z.object({
+  frame: z.number(),
+  global_id: z.number(),
+  label: z.string(),
+  x1: z.number(),
+  y1: z.number(),
+  x2: z.number(),
+  y2: z.number(),
+  cx: z.number(),
+  cy: z.number(),
+  Xc: z.number().optional(),
+  Yc: z.number().optional(),
+  Zc: z.number().optional(),
+  Xw: z.number().optional(),
+  Yw: z.number().optional(),
+  Zw: z.number().optional(),
+});
+
+// Grouped detection schema
+export const groupedDetectionSchema = z.object({
+  id: z.string(),
+  global_id: z.number(),
+  label: z.string(),
+  status: z.enum(['safe', 'medium', 'dangerous', 'unsure']),
+  firstFrame: z.number(),
+  lastFrame: z.number(),
+  frameCount: z.number(),
+  avgPosition: z.object({
+    camera: z.object({ x: z.number(), y: z.number(), z: z.number() }),
+    world: z.object({ x: z.number(), y: z.number(), z: z.number() }),
+  }),
+  bbox: z.object({
+    x1: z.number(),
+    y1: z.number(),
+    x2: z.number(),
+    y2: z.number(),
+    width: z.number(),
+    height: z.number(),
+  }),
+});
+
+type Detection = z.infer<typeof detectionSchema>;
+type GroupedDetection = z.infer<typeof groupedDetectionSchema>;
+
+// Function to determine status based on object type (danger assessment)
+function getObjectStatus(
+  label: string
+): 'safe' | 'medium' | 'dangerous' | 'unsure' {
+  const dangerousObjects = [
+    'knife',
+    'gun',
+    'weapon',
+    'explosive',
+    'bomb',
+    'pistol',
+    'rifle',
+    'paper air plane',
+  ];
+  const moderateObjects = [
+    'drone',
+    'aircraft',
+    'helicopter',
+    'vehicle',
+    'car',
+    'truck',
+    'bottle',
+  ];
+  const safeObjects = [
+    'piece of paper',
+    'paper',
+    'book',
+    'cup',
+    'phone',
+    'laptop',
+  ];
+
+  const lowerLabel = label.toLowerCase();
+
+  if (dangerousObjects.some((dangerous) => lowerLabel.includes(dangerous))) {
+    return 'dangerous'; // High danger
+  }
+
+  if (moderateObjects.some((moderate) => lowerLabel.includes(moderate))) {
+    return 'medium'; // Moderate danger
+  }
+
+  if (safeObjects.some((safe) => lowerLabel.includes(safe))) {
+    return 'safe'; // Safe objects
+  }
+
+  return 'unsure'; // Unknown/uncertain objects
+}
+
+// Function to group detections by global_id and label
+function groupDetections(detections: Detection[]): GroupedDetection[] {
+  const groups = new Map<string, Detection[]>();
+
+  // Group by global_id and label
+  detections.forEach((detection) => {
+    const key = `${detection.global_id}_${detection.label}`;
+    if (!groups.has(key)) {
+      groups.set(key, []);
+    }
+    groups.get(key)!.push(detection);
+  });
+
+  // Convert groups to grouped detections
+  return Array.from(groups.entries())
+    .map(([key, detectionGroup]) => {
+      const firstDetection = detectionGroup[0];
+      const lastDetection = detectionGroup[detectionGroup.length - 1];
+
+      // Calculate average positions
+      const validCameraCoords = detectionGroup.filter(
+        (d) => d.Xc !== undefined && d.Yc !== undefined && d.Zc !== undefined
+      );
+      const validWorldCoords = detectionGroup.filter(
+        (d) => d.Xw !== undefined && d.Yw !== undefined && d.Zw !== undefined
+      );
+
+      const avgCameraPos =
+        validCameraCoords.length > 0
+          ? {
+              x:
+                validCameraCoords.reduce((sum, d) => sum + d.Xc!, 0) /
+                validCameraCoords.length,
+              y:
+                validCameraCoords.reduce((sum, d) => sum + d.Yc!, 0) /
+                validCameraCoords.length,
+              z:
+                validCameraCoords.reduce((sum, d) => sum + d.Zc!, 0) /
+                validCameraCoords.length,
+            }
+          : { x: 0, y: 0, z: 0 };
+
+      const avgWorldPos =
+        validWorldCoords.length > 0
+          ? {
+              x:
+                validWorldCoords.reduce((sum, d) => sum + d.Xw!, 0) /
+                validWorldCoords.length,
+              y:
+                validWorldCoords.reduce((sum, d) => sum + d.Yw!, 0) /
+                validWorldCoords.length,
+              z:
+                validWorldCoords.reduce((sum, d) => sum + d.Zw!, 0) /
+                validWorldCoords.length,
+            }
+          : { x: 0, y: 0, z: 0 };
+
+      // Calculate average bounding box
+      const avgBbox = {
+        x1: Math.round(
+          detectionGroup.reduce((sum, d) => sum + d.x1, 0) /
+            detectionGroup.length
+        ),
+        y1: Math.round(
+          detectionGroup.reduce((sum, d) => sum + d.y1, 0) /
+            detectionGroup.length
+        ),
+        x2: Math.round(
+          detectionGroup.reduce((sum, d) => sum + d.x2, 0) /
+            detectionGroup.length
+        ),
+        y2: Math.round(
+          detectionGroup.reduce((sum, d) => sum + d.y2, 0) /
+            detectionGroup.length
+        ),
+      };
+
+      return {
+        id: key,
+        global_id: firstDetection.global_id,
+        label: firstDetection.label,
+        status: getObjectStatus(firstDetection.label),
+        firstFrame: Math.min(...detectionGroup.map((d) => d.frame)),
+        lastFrame: Math.max(...detectionGroup.map((d) => d.frame)),
+        frameCount: detectionGroup.length,
+        avgPosition: {
+          camera: avgCameraPos,
+          world: avgWorldPos,
+        },
+        bbox: {
+          ...avgBbox,
+          width: avgBbox.x2 - avgBbox.x1,
+          height: avgBbox.y2 - avgBbox.y1,
+        },
+      };
+    })
+    .sort((a, b) => a.global_id - b.global_id);
+}
+
+function DetectionDetailDialog({ detection }: { detection: GroupedDetection }) {
+  const [open, setOpen] = React.useState(false);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-        >
-          <IconEye className="text-muted-foreground size-4" />
-          <span className="sr-only">View details</span>
+        <Button variant='ghost' size='icon' className='h-8 w-8'>
+          <IconEye className='text-muted-foreground size-4' />
+          <span className='sr-only'>View details</span>
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className='max-w-2xl'>
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <div className="flex items-center gap-1">
-              {detection.status === "active" && (
-                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-              )}
-              {detection.status === "investigating" && (
-                <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
-              )}
-              {detection.status === "resolved" && (
-                <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-              )}
-              {detection.status === "false-positive" && (
-                <div className="w-2 h-2 bg-gray-500 rounded-full"></div>
-              )}
-              <Badge variant="outline">{detection.objectType}</Badge>
-            </div>
-            <span className="text-muted-foreground">Detection Details</span>
+          <DialogTitle className='flex items-center gap-2'>
+            <Badge variant='outline'>{detection.label}</Badge>
+            <span className='text-muted-foreground'>
+              Detection #{detection.global_id}
+            </span>
           </DialogTitle>
           <DialogDescription>
             Detailed information about the detected object
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid grid-cols-2 gap-6">
-          <div className="space-y-4">
+        <div className='grid grid-cols-2 gap-6'>
+          <div className='space-y-4'>
             <div>
-              <Label className="text-sm font-medium text-muted-foreground">Detection Image</Label>
-              <div className="mt-2">
-                <img
-                  src={detection.imagePath}
-                  alt={detection.objectType}
-                  className="w-full h-48 object-cover rounded-lg border"
-                  onError={(e) => {
-                    const target = e.target as HTMLImageElement
-                    target.src = `https://picsum.photos/seed/${detection.id}/400/300.jpg`
-                  }}
-                />
+              <h4 className='text-sm font-medium text-muted-foreground mb-2'>
+                Bounding Box
+              </h4>
+              <div className='text-sm space-y-1'>
+                <div>
+                  Top-left: ({detection.bbox.x1}, {detection.bbox.y1})
+                </div>
+                <div>
+                  Bottom-right: ({detection.bbox.x2}, {detection.bbox.y2})
+                </div>
+                <div>
+                  Size: {detection.bbox.width} × {detection.bbox.height} px
+                </div>
               </div>
             </div>
 
             <div>
-              <Label className="text-sm font-medium text-muted-foreground">Notes</Label>
-              <p className="mt-1 text-sm">{detection.notes || "No additional notes"}</p>
+              <h4 className='text-sm font-medium text-muted-foreground mb-2'>
+                Frame Range
+              </h4>
+              <div className='text-sm space-y-1'>
+                <div>First frame: {detection.firstFrame}</div>
+                <div>Last frame: {detection.lastFrame}</div>
+                <div>Total frames: {detection.frameCount}</div>
+              </div>
             </div>
           </div>
 
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label className="text-sm font-medium text-muted-foreground">Status</Label>
-                <div className="mt-1 flex items-center gap-2">
-                  {detection.status === "active" && (
-                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                  )}
-                  {detection.status === "investigating" && (
-                    <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
-                  )}
-                  {detection.status === "resolved" && (
-                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                  )}
-                  {detection.status === "false-positive" && (
-                    <div className="w-2 h-2 bg-gray-500 rounded-full"></div>
-                  )}
-                  <Badge variant="outline" className="capitalize">
-                    {detection.status}
-                  </Badge>
-                </div>
-              </div>
-
-              <div>
-                <Label className="text-sm font-medium text-muted-foreground">Danger Score</Label>
-                <div className="mt-1">
-                  <Badge
-                    variant={detection.dangerScore >= 66 ? "destructive" : detection.dangerScore >= 33 ? "default" : "secondary"}
-                  >
-                    {detection.dangerScore}
-                  </Badge>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label className="text-sm font-medium text-muted-foreground">Confidence</Label>
-                <p className="mt-1 font-mono">{detection.confidence.toFixed(1)}%</p>
-              </div>
-
-              <div>
-                <Label className="text-sm font-medium text-muted-foreground">Accuracy</Label>
-                <p className="mt-1 font-mono">{detection.accuracy.toFixed(1)}%</p>
+          <div className='space-y-4'>
+            <div>
+              <h4 className='text-sm font-medium text-muted-foreground mb-2'>
+                Camera Coordinates (m)
+              </h4>
+              <div className='text-sm font-mono space-y-1'>
+                <div>X: {detection.avgPosition.camera.x.toFixed(3)}</div>
+                <div>Y: {detection.avgPosition.camera.y.toFixed(3)}</div>
+                <div>Z: {detection.avgPosition.camera.z.toFixed(3)}</div>
               </div>
             </div>
 
             <div>
-              <Label className="text-sm font-medium text-muted-foreground">Location</Label>
-              <div className="mt-1 flex items-center gap-1">
-                <IconMapPin className="text-muted-foreground size-4" />
-                <span>{detection.location}</span>
+              <h4 className='text-sm font-medium text-muted-foreground mb-2'>
+                World Coordinates (m)
+              </h4>
+              <div className='text-sm font-mono space-y-1'>
+                <div>X: {detection.avgPosition.world.x.toFixed(3)}</div>
+                <div>Y: {detection.avgPosition.world.y.toFixed(3)}</div>
+                <div>Z: {detection.avgPosition.world.z.toFixed(3)}</div>
               </div>
-            </div>
-
-            <div>
-              <Label className="text-sm font-medium text-muted-foreground">Coordinates</Label>
-              <div className="mt-1 space-y-1 text-sm font-mono">
-                <div>X: {detection.x.toFixed(1)}</div>
-                <div>Y: {detection.y.toFixed(1)}</div>
-                <div>Z: {detection.z.toFixed(1)}</div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              {detection.speed && (
-                <div>
-                  <Label className="text-sm font-medium text-muted-foreground">Speed</Label>
-                  <p className="mt-1 font-mono">{detection.speed.toFixed(1)} m/s</p>
-                </div>
-              )}
-
-              {detection.altitude && (
-                <div>
-                  <Label className="text-sm font-medium text-muted-foreground">Altitude</Label>
-                  <p className="mt-1 font-mono">{detection.altitude.toFixed(1)} m</p>
-                </div>
-              )}
-            </div>
-
-            <div>
-              <Label className="text-sm font-medium text-muted-foreground">Timestamp</Label>
-              <p className="mt-1 text-sm">
-                {new Date(detection.timestamp).toLocaleString()}
-              </p>
-            </div>
-
-            <div>
-              <Label className="text-sm font-medium text-muted-foreground">Duration</Label>
-              <p className="mt-1 font-mono">{detection.duration.toFixed(1)} seconds</p>
             </div>
           </div>
         </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>
-            Close
-          </Button>
-          <Button onClick={() => {
-            toast.info(`Opening map for ${detection.location}`)
-            setOpen(false)
-          }}>
-            <IconMap className="mr-2 size-4" />
-            View on Map
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
-}
-
-export const schema = z.object({
-  id: z.number(),
-  objectType: z.string(),
-  timestamp: z.string(),
-  x: z.number(),
-  y: z.number(),
-  z: z.number(),
-  duration: z.number(),
-  accuracy: z.number(),
-  dangerScore: z.number(),
-  imagePath: z.string(),
-  location: z.string(),
-  status: z.enum(["active", "investigating", "resolved", "false-positive"]),
-  confidence: z.number(),
-  speed: z.number().optional(),
-  altitude: z.number().optional(),
-  notes: z.string().optional(),
-})
-
-// Create a separate component for the drag handle
-function DragHandle({ id }: { id: number }) {
-  const { attributes, listeners } = useSortable({
-    id,
-  })
-
-  return (
-    <Button
-      {...attributes}
-      {...listeners}
-      variant="ghost"
-      size="icon"
-      className="text-muted-foreground size-7 hover:bg-transparent"
-    >
-      <IconGripVertical className="text-muted-foreground size-3" />
-      <span className="sr-only">Drag to reorder</span>
-    </Button>
-  )
-}
-
-function DraggableRow({ row }: { row: Row<z.infer<typeof schema>> }) {
-  const { transform, transition, setNodeRef, isDragging } = useSortable({
-    id: row.original.id,
-  })
-
-  return (
-    <TableRow
-      data-state={row.getIsSelected() && "selected"}
-      data-dragging={isDragging}
-      ref={setNodeRef}
-      className="relative z-0 data-[dragging=true]:z-10 data-[dragging=true]:opacity-80"
-      style={{
-        transform: CSS.Transform.toString(transform),
-        transition: transition,
-      }}
-    >
-      {row.getVisibleCells().map((cell) => (
-        <TableCell key={cell.id}>
-          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-        </TableCell>
-      ))}
-    </TableRow>
-  )
+  );
 }
 
 export function ObjectDetectionDataTable({
-  data: initialData,
+  data: rawData,
 }: {
-  data: z.infer<typeof schema>[]
+  data: Detection[];
 }) {
-  const [data, setData] = React.useState(() => initialData)
-  const [rowSelection, setRowSelection] = React.useState({})
   const [columnVisibility, setColumnVisibility] =
-    React.useState<VisibilityState>({})
+    React.useState<VisibilityState>({});
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
     []
-  )
-  const [sorting, setSorting] = React.useState<SortingState>([])
-  const [isLoading, setIsLoading] = React.useState(false)
-  const [page, setPage] = React.useState(1)
-  const [hasMore, setHasMore] = React.useState(true)
-  const tableContainerRef = React.useRef<HTMLDivElement>(null)
-  const sortableId = React.useId()
-  const sensors = useSensors(
-    useSensor(MouseSensor, {}),
-    useSensor(TouchSensor, {}),
-    useSensor(KeyboardSensor, {})
-  )
+  );
+  const [sorting, setSorting] = React.useState<SortingState>([]);
 
-  const columns: ColumnDef<z.infer<typeof schema>>[] = [
+  // Group the raw detection data
+  const groupedData = React.useMemo(() => groupDetections(rawData), [rawData]);
+
+  const columns: ColumnDef<GroupedDetection>[] = [
     {
-      id: "drag",
-      header: () => null,
-      cell: ({ row }) => <DragHandle id={row.original.id} />,
+      accessorKey: 'global_id',
+      header: 'ID',
+      cell: ({ row }) => (
+        <div className='font-mono text-sm'>{row.original.global_id}</div>
+      ),
     },
     {
-      id: "select",
-      header: ({ table }) => (
-        <div className="flex items-center justify-center">
-          <Checkbox
-            checked={
-              table.getIsAllPageRowsSelected() ||
-              (table.getIsSomePageRowsSelected() && "indeterminate")
-            }
-            onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-            aria-label="Select all"
-          />
+      accessorKey: 'label',
+      header: 'Object',
+      cell: ({ row }) => (
+        <div className='flex items-center gap-2'>
+          <Badge variant='outline' className='text-xs'>
+            {row.original.label}
+          </Badge>
         </div>
       ),
+    },
+    {
+      accessorKey: 'status',
+      header: 'Status',
       cell: ({ row }) => (
-        <div className="flex items-center justify-center">
-          <Checkbox
-            checked={row.getIsSelected()}
-            onCheckedChange={(value) => row.toggleSelected(!!value)}
-            aria-label="Select row"
-          />
-        </div>
+        <Status status={row.original.status}>
+          <StatusIndicator />
+          <StatusLabel />
+        </Status>
       ),
-      enableSorting: false,
-      enableHiding: false,
     },
     {
-      accessorKey: "objectType",
-      header: "Object Type",
+      accessorKey: 'frameCount',
+      header: 'Frames',
       cell: ({ row }) => (
-        <div className="flex flex-col gap-1 w-40">
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1">
-              {row.original.status === "active" && (
-                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-              )}
-              {row.original.status === "investigating" && (
-                <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
-              )}
-              {row.original.status === "resolved" && (
-                <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-              )}
-              {row.original.status === "false-positive" && (
-                <div className="w-2 h-2 bg-gray-500 rounded-full"></div>
-              )}
-              <Badge variant="outline" className="text-muted-foreground px-1.5">
-                {row.original.objectType}
-              </Badge>
-            </div>
-          </div>
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-            <span className="font-mono">{row.original.confidence.toFixed(1)}%</span>
-            {row.original.speed && (
-              <span className="font-mono">{row.original.speed.toFixed(1)} m/s</span>
-            )}
-          </div>
-        </div>
-      ),
-      enableHiding: false,
-    },
-    {
-      accessorKey: "timestamp",
-      header: "Time",
-      cell: ({ row }) => {
-        const date = new Date(row.original.timestamp)
-        return date.toLocaleString()
-      },
-    },
-    {
-      accessorKey: "location",
-      header: "Location",
-      cell: ({ row }) => (
-        <div className="flex items-center gap-1">
-          <IconMapPin className="text-muted-foreground size-4" />
-          <div className="flex flex-col">
-            <span>{row.original.location}</span>
-            {row.original.altitude && (
-              <span className="text-xs text-muted-foreground">
-                Alt: {row.original.altitude.toFixed(1)}m
-              </span>
-            )}
+        <div className='text-sm'>
+          <div>{row.original.frameCount}</div>
+          <div className='text-xs text-muted-foreground'>
+            {row.original.firstFrame} - {row.original.lastFrame}
           </div>
         </div>
       ),
     },
     {
-      accessorKey: "coordinates",
-      header: "Coordinates",
+      accessorKey: 'cameraPosition',
+      header: 'Camera Coords',
       cell: ({ row }) => (
-        <div className="text-sm">
-          <div>X: {row.original.x}</div>
-          <div>Y: {row.original.y}</div>
-          <div>Z: {row.original.z}</div>
+        <div className='text-xs font-mono space-y-1'>
+          <div>X: {row.original.avgPosition.camera.x.toFixed(2)}</div>
+          <div>Y: {row.original.avgPosition.camera.y.toFixed(2)}</div>
+          <div>Z: {row.original.avgPosition.camera.z.toFixed(2)}</div>
         </div>
       ),
     },
     {
-      accessorKey: "duration",
-      header: "Duration (s)",
+      accessorKey: 'worldPosition',
+      header: 'World Coords',
       cell: ({ row }) => (
-        <div className="text-right font-mono">
-          {row.original.duration.toFixed(1)}
+        <div className='text-xs font-mono space-y-1'>
+          <div>X: {row.original.avgPosition.world.x.toFixed(2)}</div>
+          <div>Y: {row.original.avgPosition.world.y.toFixed(2)}</div>
+          <div>Z: {row.original.avgPosition.world.z.toFixed(2)}</div>
         </div>
       ),
     },
     {
-      accessorKey: "accuracy",
-      header: "Accuracy (%)",
+      accessorKey: 'bbox',
+      header: 'Bounding Box',
       cell: ({ row }) => (
-        <div className="text-right font-mono">
-          {row.original.accuracy.toFixed(1)}
-        </div>
-      ),
-    },
-    {
-      accessorKey: "dangerScore",
-      header: "Danger Score",
-      cell: ({ row }) => {
-        const score = row.original.dangerScore
-        let variant: "default" | "secondary" | "destructive" = "default"
-        let className = ""
-
-        if (score >= 66) {
-          variant = "destructive"
-          className = "bg-red-100 text-red-800 border-red-200"
-        } else if (score >= 33) {
-          variant = "default"
-          className = "bg-yellow-100 text-yellow-800 border-yellow-200"
-        } else {
-          variant = "secondary"
-          className = "bg-green-100 text-green-800 border-green-200"
-        }
-
-        return (
-          <div className="text-center">
-            <Badge variant={variant} className={className}>
-              {score}
-            </Badge>
+        <div className='text-xs font-mono space-y-1'>
+          <div>
+            {row.original.bbox.width} × {row.original.bbox.height}
           </div>
-        )
-      },
-    },
-    {
-      id: "actions",
-      header: "Actions",
-      cell: ({ row }) => (
-        <div className="flex items-center gap-1">
-          <DetectionDetailDialog detection={row.original} />
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => {
-              toast.info(`Opening map for ${row.original.location}`)
-            }}
-          >
-            <IconMap className="text-muted-foreground size-4" />
-            <span className="sr-only">View on map</span>
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                className="data-[state=open]:bg-muted text-muted-foreground flex size-8"
-                size="icon"
-              >
-                <IconDotsVertical />
-                <span className="sr-only">Open menu</span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuItem onClick={() => {
-                toast.info(`Editing detection ${row.original.id}`)
-              }}>
-                <IconEdit className="mr-2 size-4" />
-                Edit
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => {
-                toast.info(`Marking ${row.original.objectType} as resolved`)
-              }}>
-                <IconCircleCheckFilled className="mr-2 size-4" />
-                Mark Resolved
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => {
-                toast.info(`Sending notification for ${row.original.objectType}`)
-              }}>
-                <IconBell className="mr-2 size-4" />
-                Send Notification
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => {
-                toast.info(`Investigating ${row.original.objectType}`)
-              }}>
-                <IconSearch className="mr-2 size-4" />
-                Investigate
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                variant="destructive"
-                onClick={() => {
-                  setData(prev => prev.filter(item => item.id !== row.original.id))
-                  toast.success("Detection deleted")
-                }}
-              >
-                <IconTrash className="mr-2 size-4" />
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <div className='text-muted-foreground'>
+            ({row.original.bbox.x1}, {row.original.bbox.y1})
+          </div>
         </div>
       ),
     },
-  ]
-
-  const dataIds = React.useMemo<UniqueIdentifier[]>(
-    () => data?.map(({ id }) => id) || [],
-    [data]
-  )
-
-  const loadMoreData = React.useCallback(async () => {
-    if (isLoading || !hasMore) return
-
-    setIsLoading(true)
-    try {
-      await new Promise(resolve => setTimeout(resolve, 1000))
-
-      const newData = Array.from({ length: 5 }, (_, i) => ({
-        id: data.length + i + 1,
-        objectType: ["Drone", "Bird", "Aircraft", "Balloon", "Helicopter"][Math.floor(Math.random() * 5)],
-        timestamp: new Date(Date.now() - Math.random() * 86400000).toISOString(),
-        x: Math.random() * 500,
-        y: Math.random() * 500,
-        z: Math.random() * 300,
-        duration: Math.random() * 60,
-        accuracy: 70 + Math.random() * 30,
-        dangerScore: Math.floor(Math.random() * 100),
-        imagePath: `/detections/mock_${data.length + i + 1}.png`,
-        location: `Zone ${String.fromCharCode(65 + Math.floor(Math.random() * 26))}`,
-        status: ["active", "investigating", "resolved", "false-positive"][Math.floor(Math.random() * 4)] as "active" | "investigating" | "resolved" | "false-positive",
-        confidence: 70 + Math.random() * 30,
-        speed: Math.random() * 150,
-        altitude: Math.random() * 300,
-        notes: `Mock detection ${data.length + i + 1}`
-      }))
-
-      setData(prev => [...prev, ...newData])
-      setPage(prev => prev + 1)
-
-      if (page >= 5) {
-        setHasMore(false)
-      }
-    } catch (error) {
-      console.error('Error loading more data:', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [isLoading, hasMore, page, data.length])
-
-  React.useEffect(() => {
-    const handleScroll = () => {
-      if (!tableContainerRef.current || isLoading || !hasMore) return
-
-      const { scrollTop, scrollHeight, clientHeight } = tableContainerRef.current
-      const scrollPercentage = (scrollTop + clientHeight) / scrollHeight
-
-      if (scrollPercentage > 0.8) {
-        loadMoreData()
-      }
-    }
-
-    const container = tableContainerRef.current
-    if (container) {
-      container.addEventListener('scroll', handleScroll)
-      return () => container.removeEventListener('scroll', handleScroll)
-    }
-  }, [loadMoreData, isLoading, hasMore])
+    {
+      id: 'actions',
+      header: 'Actions',
+      cell: ({ row }) => <DetectionDetailDialog detection={row.original} />,
+    },
+  ];
 
   const table = useReactTable({
-    data,
+    data: groupedData,
     columns,
     state: {
       sorting,
       columnVisibility,
-      rowSelection,
       columnFilters,
     },
-    getRowId: (row) => row.id.toString(),
-    enableRowSelection: true,
-    onRowSelectionChange: setRowSelection,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange: setColumnVisibility,
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
-    getFacetedRowModel: getFacetedRowModel(),
-    getFacetedUniqueValues: getFacetedUniqueValues(),
-  })
+  });
 
-  function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event
-    if (active && over && active.id !== over.id) {
-      setData((data) => {
-        const oldIndex = dataIds.indexOf(active.id)
-        const newIndex = dataIds.indexOf(over.id)
-        return arrayMove(data, oldIndex, newIndex)
-      })
-    }
-  }
-
-  const addDetection = () => {
-    const newDetection = {
-      id: data.length + 1,
-      objectType: "Unknown Object",
-      timestamp: new Date().toISOString(),
-      x: Math.random() * 500,
-      y: Math.random() * 500,
-      z: Math.random() * 300,
-      duration: Math.random() * 60,
-      accuracy: 70 + Math.random() * 30,
-      dangerScore: Math.floor(Math.random() * 100),
-      imagePath: `/detections/new_${data.length + 1}.png`,
-      location: `Zone ${String.fromCharCode(65 + Math.floor(Math.random() * 26))}`,
-      status: "active" as const,
-      confidence: 70 + Math.random() * 30,
-      speed: Math.random() * 150,
-      altitude: Math.random() * 300,
-      notes: "New detection - manual entry"
-    }
-    setData(prev => [newDetection, ...prev])
-    toast.success("New detection added")
-  }
-
-  
   return (
-    <Tabs
-      defaultValue="outline"
-      className="w-full flex-col justify-start gap-6"
-    >
-      <div className="flex items-center justify-between px-4 lg:px-6">
-        <Label htmlFor="view-selector" className="sr-only">
-          View
-        </Label>
-        <Select defaultValue="outline">
-          <SelectTrigger
-            className="flex w-fit @4xl/main:hidden"
-            size="sm"
-            id="view-selector"
-          >
-            <SelectValue placeholder="Select a view" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="outline">Outline</SelectItem>
-            <SelectItem value="past-performance">Past Performance</SelectItem>
-            <SelectItem value="key-personnel">Key Personnel</SelectItem>
-            <SelectItem value="focus-documents">Focus Documents</SelectItem>
-          </SelectContent>
-        </Select>
-        <TabsList className="**:data-[slot=badge]:bg-muted-foreground/30 hidden **:data-[slot=badge]:size-5 **:data-[slot=badge]:rounded-full **:data-[slot=badge]:px-1 @4xl/main:flex">
-          <TabsTrigger value="detections">Detections</TabsTrigger>
-          <TabsTrigger value="analytics">
-            Analytics <Badge variant="secondary">3</Badge>
-          </TabsTrigger>
-          <TabsTrigger value="threats">
-            Threats <Badge variant="secondary">2</Badge>
-          </TabsTrigger>
-          <TabsTrigger value="statistics">Statistics</TabsTrigger>
-        </TabsList>
-        <div className="flex items-center gap-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm">
-                <IconLayoutColumns />
-                <span className="hidden lg:inline">Customize Columns</span>
-                <span className="lg:hidden">Columns</span>
-                <IconChevronDown />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              {table
-                .getAllColumns()
-                .filter(
-                  (column) =>
-                    typeof column.accessorFn !== "undefined" &&
-                    column.getCanHide()
-                )
-                .map((column) => {
-                  return (
-                    <DropdownMenuCheckboxItem
-                      key={column.id}
-                      className="capitalize"
-                      checked={column.getIsVisible()}
-                      onCheckedChange={(value) =>
-                        column.toggleVisibility(!!value)
-                      }
-                    >
-                      {column.id}
-                    </DropdownMenuCheckboxItem>
-                  )
-                })}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <Button variant="outline" size="sm" onClick={addDetection}>
-            <IconPlus />
-            <span className="hidden lg:inline">Add Detection</span>
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => loadMoreData()}>
-            <IconRefresh />
-            <span className="hidden lg:inline">Load More</span>
-          </Button>
+    <div className='w-full space-y-4 px-6'>
+      <div className='flex items-center justify-between'>
+        <h2 className='text-lg font-semibold'>Object Detections</h2>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant='outline' size='sm'>
+              <IconLayoutColumns className='mr-2 size-4' />
+              Columns
+              <IconChevronDown className='ml-2 size-4' />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align='end' className='w-56'>
+            {table
+              .getAllColumns()
+              .filter((column) => column.getCanHide())
+              .map((column) => {
+                return (
+                  <DropdownMenuCheckboxItem
+                    key={column.id}
+                    className='capitalize'
+                    checked={column.getIsVisible()}
+                    onCheckedChange={(value) =>
+                      column.toggleVisibility(!!value)
+                    }>
+                    {column.id}
+                  </DropdownMenuCheckboxItem>
+                );
+              })}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      <div className='rounded-lg border'>
+        <Table>
+          <TableHeader>
+            {table.getHeaderGroups().map((headerGroup) => (
+              <TableRow key={headerGroup.id}>
+                {headerGroup.headers.map((header) => (
+                  <TableHead key={header.id}>
+                    {header.isPlaceholder
+                      ? null
+                      : flexRender(
+                          header.column.columnDef.header,
+                          header.getContext()
+                        )}
+                  </TableHead>
+                ))}
+              </TableRow>
+            ))}
+          </TableHeader>
+          <TableBody>
+            {table.getRowModel().rows?.length ? (
+              table.getRowModel().rows.map((row) => (
+                <TableRow key={row.id}>
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell key={cell.id}>
+                      {flexRender(
+                        cell.column.columnDef.cell,
+                        cell.getContext()
+                      )}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell
+                  colSpan={columns.length}
+                  className='h-24 text-center'>
+                  No detections found.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      <div className='flex items-center justify-between text-sm text-muted-foreground'>
+        <div>
+          Showing {groupedData.length} grouped detections from {rawData.length}{' '}
+          total frames
         </div>
       </div>
-      <TabsContent
-        value="detections"
-        className="relative flex flex-col gap-4 overflow-auto px-4 lg:px-6"
-      >
-        <div className="overflow-hidden rounded-lg border" ref={tableContainerRef} style={{ maxHeight: '70vh', overflowY: 'auto' }}>
-          <DndContext
-            collisionDetection={closestCenter}
-            modifiers={[restrictToVerticalAxis]}
-            onDragEnd={handleDragEnd}
-            sensors={sensors}
-            id={sortableId}
-          >
-            <Table>
-              <TableHeader className="bg-muted sticky top-0 z-10">
-                {table.getHeaderGroups().map((headerGroup) => (
-                  <TableRow key={headerGroup.id}>
-                    {headerGroup.headers.map((header) => {
-                      return (
-                        <TableHead key={header.id} colSpan={header.colSpan}>
-                          {header.isPlaceholder
-                            ? null
-                            : flexRender(
-                                header.column.columnDef.header,
-                                header.getContext()
-                              )}
-                        </TableHead>
-                      )
-                    })}
-                  </TableRow>
-                ))}
-              </TableHeader>
-              <TableBody className="**:data-[slot=table-cell]:first:w-8">
-                {table.getRowModel().rows?.length ? (
-                  <SortableContext
-                    items={dataIds}
-                    strategy={verticalListSortingStrategy}
-                  >
-                    {table.getRowModel().rows.map((row) => (
-                      <DraggableRow key={row.id} row={row} />
-                    ))}
-                  </SortableContext>
-                ) : (
-                  <TableRow>
-                    <TableCell
-                      colSpan={columns.length}
-                      className="h-24 text-center"
-                    >
-                      No results.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </DndContext>
-        </div>
-        <div className="flex items-center justify-between px-4">
-          <div className="text-muted-foreground hidden flex-1 text-sm lg:flex">
-            {table.getFilteredSelectedRowModel().rows.length} of{" "}
-            {table.getFilteredRowModel().rows.length} row(s) selected.
-          </div>
-          <div className="flex w-full items-center gap-8 lg:w-fit">
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">
-                Showing {data.length} detections
-              </span>
-              {isLoading && (
-                <IconLoader className="animate-spin size-4" />
-              )}
-              {!hasMore && (
-                <span className="text-sm text-muted-foreground">
-                  (All data loaded)
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-      </TabsContent>
-      <TabsContent
-        value="analytics"
-        className="flex flex-col px-4 lg:px-6"
-      >
-        <div className="aspect-video w-full flex-1 rounded-lg border border-dashed"></div>
-      </TabsContent>
-      <TabsContent value="threats" className="flex flex-col px-4 lg:px-6">
-        <div className="aspect-video w-full flex-1 rounded-lg border border-dashed"></div>
-      </TabsContent>
-      <TabsContent
-        value="statistics"
-        className="flex flex-col px-4 lg:px-6"
-      >
-        <div className="aspect-video w-full flex-1 rounded-lg border border-dashed"></div>
-      </TabsContent>
-    </Tabs>
-  )
+    </div>
+  );
 }
-
-
