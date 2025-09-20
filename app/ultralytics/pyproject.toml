@@ -1,12 +1,17 @@
 [project]
-name = "ultralytics"
+name = "skysentry-detection"
 version = "0.1.0"
-description = "Add your description here"
+description = "Object detection module for SkySentry"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "jupyterlab>=4.4.7",
     "matplotlib>=3.10.6",
+    "numpy>=2.3.3",
+    "opencv-python>=4.11.0.86",
+    "pandas>=2.3.2",
     "pillow>=11.3.0",
     "requests>=2.32.5",
+    "torch>=2.8.0",
+    "ultralytics>=8.3.0",
 ]
