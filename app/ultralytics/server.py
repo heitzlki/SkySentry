@@ -94,14 +94,27 @@ async def get_all_clients(backend_url: str = Query(DEFAULT_BACKEND_URL, descript
         response = requests.get(f"{backend_url}/clients", timeout=10)
         response.raise_for_status()
         
-        data = response.json() # data is list
+        data = response.json()
         print(data)
-        clients = data if isinstance(data, list) else []
+        
+        if isinstance(data, dict):
+            success = data.get("success", True)
+            clients = data.get("clients", [])
+            error = data.get("error")
+        elif isinstance(data, list):
+            success = True
+            clients = data
+            error = None
+        else:
+            success = False
+            clients = []
+            error = "Invalid response format"
             
         return ClientsListResponse(
-            success=True,
+            success=success,
             clients=clients,
-            count=len(clients)
+            count=len(clients),
+            error=error
         )
         
     except requests.RequestException as e:
