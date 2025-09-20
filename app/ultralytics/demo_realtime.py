@@ -7,6 +7,7 @@ import json
 import numpy as np
 from collections import defaultdict, deque
 from yoloe_rt import YoloeRealtime
+from fetch_frame import get_frame
 
 # ---------------- Config ----------------
 CAM_INDEX             = 0
@@ -94,6 +95,39 @@ def render_topdown_panel(panel_h, panel_w, objects, trails, bounds, cur_frame):
 
     cv2.putText(img, "Top-down (X-Y)", (8, 22), FONT, 0.6, (220,220,220), 1, cv2.LINE_AA)
     return img
+
+def get_res_for_id(client_id):
+    """
+    Fetch the latest frame for the given client_id and run YOLO object detection on it.
+    
+    Args:
+        client_id (str): The client ID to process
+        
+    Returns:
+        list: List of detection dictionaries with object information
+        
+    Raises:
+        ValueError: If no frame is available for the client
+    """
+    frame = get_frame(client_id)
+    if frame is None:
+        raise ValueError(f"No frame available for client {client_id}: Unknown error")
+    
+    # Convert PIL Image to numpy array (BGR for OpenCV)
+    frame_np = np.array(frame)
+    if frame.mode == 'RGB':
+        frame_np = cv2.cvtColor(frame_np, cv2.COLOR_RGB2BGR)
+    elif frame.mode == 'RGBA':
+        frame_np = cv2.cvtColor(frame_np, cv2.COLOR_RGBA2BGR)
+    # Assume it's already BGR if not RGB
+    
+    # Initialize YOLOE processor
+    rt = YoloeRealtime(weights="yoloe-11s-seg.pt", device=0)  # Use GPU if available, set to None for CPU
+    
+    # Process the frame
+    json_list, _ = rt.process_frame(frame_np, return_vis=False)
+    
+    return json_list
 
 def main():
     rt = YoloeRealtime(weights="yoloe-11s-seg.pt", device=0)  # set device=None for CPU
