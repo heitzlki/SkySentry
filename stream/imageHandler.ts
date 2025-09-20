@@ -20,7 +20,7 @@ export class ImageHandler {
 
     try {
       this.redisClient = createClient({
-        url: "redis://localhost:6379",
+        url: process.env.REDIS_URL || "redis://localhost:6379",
         socket: {
           reconnectStrategy: (retries) => Math.min(retries * 100, 3000),
         },
@@ -257,7 +257,7 @@ export class ImageHandler {
     return {
       totalFrames: this.frameCounter,
       redisConnected: this.isConnected,
-      redisUrl: "redis://localhost:6379",
+      redisUrl: process.env.REDIS_URL || "redis://localhost:6379",
     };
   }
 

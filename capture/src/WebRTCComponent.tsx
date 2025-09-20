@@ -35,7 +35,9 @@ const WebRTCComponent: React.FC<WebRTCComponentProps> = () => {
   const initializeConnection = async () => {
     try {
       // Initialize WebSocket for signaling
-      wsRef.current = new WebSocket("ws://localhost:8080");
+      wsRef.current = new WebSocket(
+        import.meta.env.VITE_WEBSOCKET_URL || "ws://localhost:8080"
+      );
 
       wsRef.current.onopen = () => {
         createPeerConnection();

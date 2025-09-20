@@ -9,7 +9,7 @@ interface SkySentryClientProps {
 
 const SkySentryClient: React.FC<SkySentryClientProps> = ({
   clientId,
-  serverUrl = "ws://localhost:8080",
+  serverUrl = import.meta.env.VITE_WEBSOCKET_URL || "ws://localhost:8080",
   autoStartCamera = false,
   frameRate = 10,
 }) => {
