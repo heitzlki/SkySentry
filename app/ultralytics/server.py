@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import your existing AI processing function
-from demo_realtime import get_res_for_id
+from demo_realtime_test import get_res_for_id
 
 # Initialize FastAPI app
 app = FastAPI(
