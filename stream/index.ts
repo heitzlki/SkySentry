@@ -1,10 +1,12 @@
 import { WebSocketServer } from "ws";
+import { Elysia } from "elysia";
 import {
   BlackboxMessageHandler,
   type CustomMessageHandler,
 } from "./blackboxHandler.js";
 import { type Message } from "./messageTypes.js";
 import { ImageHandler } from "./imageHandler.js";
+import { api } from "./api.js";
 
 // Initialize the image handler
 const imageHandler = new ImageHandler();
@@ -52,9 +54,27 @@ const myCustomMessageHandler: CustomMessageHandler = async (
 // Initialize the blackbox handler with your custom handler
 const messageHandler = new BlackboxMessageHandler(myCustomMessageHandler);
 
-const wss = new WebSocketServer({ port: 8080 });
+// Create Elisia app with API routes
+const app = new Elysia()
+  .use(api)
+  .listen(parseInt(process.env.API_PORT || "3001"));
 
-console.log("SkySentry server running on port 8080");
+console.log(
+  `SkySentry API server running on http://localhost:${
+    process.env.API_PORT || "3001"
+  }`
+);
+
+// WebSocket server on port 8080
+const wss = new WebSocketServer({
+  port: parseInt(process.env.WEBSOCKET_PORT || "8080"),
+});
+
+console.log(
+  `SkySentry WebSocket server running on port ${
+    process.env.WEBSOCKET_PORT || "8080"
+  }`
+);
 
 // Track WebSocket connections by clientId
 const clientConnections = new Map<string, any>();
