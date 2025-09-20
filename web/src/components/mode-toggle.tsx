@@ -12,9 +12,10 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { SunMoon } from '@/components/animate-ui/icons/sun-moon';
+import { AnimateIcon } from '@/components/animate-ui/icons/icon';
 
 export function ModeToggle() {
-  const { setTheme } = useTheme();
+  const { theme, setTheme } = useTheme();
 
   return (
     // <DropdownMenu>
@@ -37,11 +38,14 @@ export function ModeToggle() {
     //     </DropdownMenuItem>
     //   </DropdownMenuContent>
     // </DropdownMenu>
-    <Button variant='ghost' size='icon' onClick={() => setTheme('dark')}>
-      {/* <Sun className='h-[1.2rem] w-[1.2rem] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90' />
-      <Moon className='absolute h-[1.2rem] w-[1.2rem] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0' /> */}
-      <span className='sr-only'>Toggle theme</span>
-      <SunMoon animateOnHover />
-    </Button>
+    <AnimateIcon animateOnHover>
+      <Button
+        variant='ghost'
+        size='icon'
+        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
+        <span className='sr-only'>Toggle theme</span>
+        <SunMoon animateOnHover animation='path' />
+      </Button>
+    </AnimateIcon>
   );
 }
