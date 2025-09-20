@@ -33,14 +33,17 @@ def get_clients(api_url: str = DEFAULT_API_URL) -> List[str]:
         
         print(f"[DEBUG] Parsing JSON response")
         data = response.json()
-        print(f"[DEBUG] Response data: {data}")
         
-        if not data.get("success", False):
-            error_msg = data.get("error", "Unknown error")
-            print(f"[ERROR] API error fetching clients: {error_msg}")
-            raise ValueError(f"API error: {error_msg}")
-            
-        clients = data.get("clients", [])
+        if isinstance(data, dict):
+            if not data.get("success", False):
+                error_msg = data.get("error", "Unknown error")
+                print(f"[ERROR] API error fetching clients: {error_msg}")
+                raise ValueError(f"API error: {error_msg}")
+            clients = data.get("clients", [])
+        else:
+            # Backend returns list directly
+            clients = data if isinstance(data, list) else []
+        
         print(f"[DEBUG] Found {len(clients)} clients: {clients}")
         return clients
         
@@ -87,18 +90,14 @@ def get_frame(client_id: str, api_url: str = DEFAULT_API_URL) -> Optional[Image.
         data = response.json()
         print(f"[DEBUG] Response data keys: {list(data.keys()) if isinstance(data, dict) else 'Not a dict'}")
         
-        if not data.get("success", False):
-            error_msg = data.get("error", "Unknown error")
-            print(f"[ERROR] No frame available for client {client_id}: {error_msg}")
+        # Check if image data is present (backend doesn't send 'success' field)
+        if "image" not in data or not data.get("image"):
+            print(f"[ERROR] No image data in response for client {client_id}")
             print(f"[DEBUG] Full response data: {data}")
             return None
             
         # Extract base64 image data
         image_data = data.get("image")
-        if not image_data:
-            print(f"[ERROR] No image data in response for client {client_id}")
-            return None
-            
         print(f"[DEBUG] Image data length: {len(image_data)} for client {client_id}")
         
         # Remove data URL prefix if present (data:image/jpeg;base64,)
