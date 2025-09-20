@@ -1,6 +1,7 @@
 import { Elysia } from "elysia";
 import { swagger } from "@elysiajs/swagger";
 import { cors } from "@elysiajs/cors";
+import { detectionService } from "./db/detection-service";
 
 // Export all types and functions for camera data
 export * from "./types";
@@ -25,6 +26,7 @@ const app = new Elysia()
         },
         tags: [
           { name: "cameras", description: "Camera endpoints" },
+          { name: "detections", description: "Detection data endpoints" },
           { name: "health", description: "Health check endpoints" },
         ],
       },
@@ -33,6 +35,76 @@ const app = new Elysia()
   .get("/", () => "Hello Elysia", {
     tags: ["health"],
   })
+  .get(
+    "/detections",
+    async ({ query }) => {
+      try {
+        const { cameraId, limit } = query;
+        const detections = await detectionService.getAllDetections(cameraId);
+        const count = await detectionService.getDetectionCount(cameraId);
+
+        return {
+          success: true,
+          detections: limit ? detections.slice(0, parseInt(limit)) : detections,
+          count,
+          cameraId: cameraId || "all",
+        };
+      } catch (error) {
+        console.error("Error in /detections endpoint:", error);
+        return {
+          success: false,
+          detections: [],
+          count: 0,
+          error: error instanceof Error ? error.message : "Unknown error",
+        };
+      }
+    },
+    {
+      tags: ["detections"],
+      detail: {
+        summary: "Get detection data",
+        description:
+          "Retrieve stored detection objects from the database, optionally filtered by camera ID",
+      },
+    }
+  )
+  .get(
+    "/detections/:cameraId/latest",
+    async ({ params, query }) => {
+      try {
+        const { cameraId } = params;
+        const { limit = "10" } = query;
+
+        const detections = await detectionService.getLatestDetections(
+          cameraId,
+          parseInt(limit)
+        );
+
+        return {
+          success: true,
+          detections,
+          count: detections.length,
+          cameraId,
+        };
+      } catch (error) {
+        console.error("Error in /detections/:cameraId/latest endpoint:", error);
+        return {
+          success: false,
+          detections: [],
+          count: 0,
+          error: error instanceof Error ? error.message : "Unknown error",
+        };
+      }
+    },
+    {
+      tags: ["detections"],
+      detail: {
+        summary: "Get latest detections for a camera",
+        description:
+          "Retrieve the most recent detection objects for a specific camera",
+      },
+    }
+  )
   .get(
     "/cameras",
     async () => {
@@ -156,3 +228,4 @@ console.log(
 console.log(
   `📚 Swagger documentation available at: http://${app.server?.hostname}:${app.server?.port}/swagger`
 );
+console.log(`🗃️ In-memory SQLite database ready for detection data storage`);

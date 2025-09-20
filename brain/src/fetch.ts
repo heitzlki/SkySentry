@@ -1,5 +1,6 @@
-import { CameraDataSchema, CameraData, CameraDataFetcher } from "./types";
-import exampleResponse from "../example-response.json";
+import { CameraDataSchema, CameraData, CameraDataFetcher } from './types';
+import { detectionService } from './db/detection-service';
+import exampleResponse from '../example-response.json';
 
 let i = 0;
 
@@ -13,7 +14,22 @@ class DevCameraDataFetcher implements CameraDataFetcher {
     i++;
     if (i >= exampleResponse.length) i = 0;
 
-    return CameraDataSchema.parse(singleObject);
+    const validatedData = CameraDataSchema.parse(singleObject);
+
+    // Store the data in the database
+    try {
+      await detectionService.storeDetectionData(cameraId, validatedData);
+      console.log(
+        `✓ Stored ${validatedData.length} detection objects for camera ${cameraId}`
+      );
+    } catch (error) {
+      console.error(
+        `Failed to store detection data for camera ${cameraId}:`,
+        error
+      );
+    }
+
+    return validatedData;
   }
 }
 
@@ -24,7 +40,22 @@ class ProdCameraDataFetcher implements CameraDataFetcher {
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
     const rawData = await response.json();
-    return CameraDataSchema.parse(rawData);
+    const validatedData = CameraDataSchema.parse(rawData);
+
+    // Store the data in the database
+    try {
+      await detectionService.storeDetectionData(cameraId, validatedData);
+      console.log(
+        `✓ Stored ${validatedData.length} detection objects for camera ${cameraId}`
+      );
+    } catch (error) {
+      console.error(
+        `Failed to store detection data for camera ${cameraId}:`,
+        error
+      );
+    }
+
+    return validatedData;
   }
 }
 

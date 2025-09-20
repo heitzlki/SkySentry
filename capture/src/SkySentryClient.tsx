@@ -8,7 +8,8 @@ interface SkySentryClientProps {
 
 const SkySentryClient: React.FC<SkySentryClientProps> = ({
   clientId,
-  serverUrl = import.meta.env.VITE_WEBSOCKET_URL || "ws://localhost:8080/ws",
+  serverUrl = import.meta.env.VITE_WEBSOCKET_URL ||
+    "wss://demo8080.shivi.io/ws",
   frameRate = 30, // Increased for lower latency
 }) => {
   const [status, setStatus] = useState<
