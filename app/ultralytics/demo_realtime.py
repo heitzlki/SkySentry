@@ -7,6 +7,21 @@ import json
 import numpy as np
 from collections import defaultdict, deque
 from yoloe_rt import YoloeRealtime
+from fetch_frame import get_clients, get_frame
+
+rt = YoloeRealtime(weights="yoloe-11s-seg.pt", device=0)  # set device=None for CPU
+cli_id = get_clients()
+if len(cli_id) < 1:
+    quit()
+
+frame = get_frame(cli_id[0])
+print(frame)
+
+
+json_list, vis = rt.process_frame(frame, return_vis=True)
+
+quit()
+
 
 # ---------------- Config ----------------
 CAM_INDEX             = 0
@@ -98,12 +113,13 @@ def render_topdown_panel(panel_h, panel_w, objects, trails, bounds, cur_frame):
 def main():
     rt = YoloeRealtime(weights="yoloe-11s-seg.pt", device=0)  # set device=None for CPU
 
-    cap = cv2.VideoCapture(CAM_INDEX)
-    if not cap.isOpened():
-        raise RuntimeError(f"Failed to open webcam index {CAM_INDEX}")
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+    # cap = cv2.VideoCapture(CAM_INDEX)
+    # if not cap.isOpened():
+    #     raise RuntimeError(f"Failed to open webcam index {CAM_INDEX}")
+    # cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+    # cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
+    
     cv2.namedWindow(WIN, cv2.WINDOW_NORMAL)
 
     # trails: gid -> deque[(Xw, Yw, frame_idx)]
@@ -115,7 +131,7 @@ def main():
     xmax = ymax = float("-inf")
 
     # prime
-    ok, frame = cap.read()
+    # ok, frame = cap.read()
     if not ok:
         raise RuntimeError("Failed to read from webcam (try a different CAM_INDEX).")
     H, W = frame.shape[:2]
@@ -124,7 +140,7 @@ def main():
     frame_idx = 0
 
     while True:
-        ok, frame = cap.read()
+        # ok, frame = cap.read()
         if not ok:
             break
 
