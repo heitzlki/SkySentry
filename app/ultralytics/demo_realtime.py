@@ -7,6 +7,7 @@ import json
 import numpy as np
 from collections import defaultdict, deque
 from yoloe_rt import YoloeRealtime
+from fetch_frame import get_frame
 
 # ---------------- Config ----------------
 CAM_INDEX             = 0
@@ -94,6 +95,63 @@ def render_topdown_panel(panel_h, panel_w, objects, trails, bounds, cur_frame):
 
     cv2.putText(img, "Top-down (X-Y)", (8, 22), FONT, 0.6, (220,220,220), 1, cv2.LINE_AA)
     return img
+
+def get_res_for_id(client_id):
+    """
+    Fetch the latest frame for the given client_id and run YOLO object detection on it.
+    
+    Args:
+        client_id (str): The client ID to process
+        
+    Returns:
+        list: List of detection dictionaries with object information
+        
+    Raises:
+        ValueError: If no frame is available for the client
+    """
+    print(f"[DEBUG] Starting AI processing for client: {client_id}")
+    
+    try:
+        print(f"[DEBUG] Fetching frame for client: {client_id}")
+        frame = get_frame(client_id)
+        if frame is None:
+            print(f"[ERROR] No frame available for client {client_id}: Frame fetch returned None")
+            raise ValueError(f"No frame available for client {client_id}: Unknown error")
+        
+        print(f"[DEBUG] Frame fetched successfully for client {client_id}, size: {frame.size}, mode: {frame.mode}")
+        
+        # Convert PIL Image to numpy array (BGR for OpenCV)
+        frame_np = np.array(frame)
+        if frame.mode == 'RGB':
+            frame_np = cv2.cvtColor(frame_np, cv2.COLOR_RGB2BGR)
+            print(f"[DEBUG] Converted RGB to BGR for client {client_id}")
+        elif frame.mode == 'RGBA':
+            frame_np = cv2.cvtColor(frame_np, cv2.COLOR_RGBA2BGR)
+            print(f"[DEBUG] Converted RGBA to BGR for client {client_id}")
+        # Assume it's already BGR if not RGB
+        
+        print(f"[DEBUG] Frame shape: {frame_np.shape} for client {client_id}")
+        
+        # Initialize YOLOE processor
+        print(f"[DEBUG] Initializing YOLOE processor for client {client_id}")
+        rt = YoloeRealtime(weights="yoloe-11s-seg.pt", device=0)  # Use GPU if available, set to None for CPU
+        
+        # Process the frame
+        print(f"[DEBUG] Running YOLO detection on frame for client {client_id}")
+        json_list, _ = rt.process_frame(frame_np, return_vis=False)
+        
+        print(f"[DEBUG] YOLO processing complete for client {client_id}, detections: {len(json_list)}")
+        for i, det in enumerate(json_list):
+            print(f"[DEBUG] Detection {i}: {det}")
+        
+        return json_list
+        
+    except Exception as e:
+        print(f"[ERROR] Exception in get_res_for_id for client {client_id}: {str(e)}")
+        print(f"[ERROR] Exception type: {type(e).__name__}")
+        import traceback
+        traceback.print_exc()
+        raise
 
 def main():
     rt = YoloeRealtime(weights="yoloe-11s-seg.pt", device=0)  # set device=None for CPU
