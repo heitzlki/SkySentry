@@ -38,7 +38,6 @@ const WebRTCComponent: React.FC<WebRTCComponentProps> = () => {
       wsRef.current = new WebSocket("ws://localhost:8080");
 
       wsRef.current.onopen = () => {
-        console.log("WebSocket connected");
         createPeerConnection();
         // Start sending messages immediately via WebSocket
         startSendingMessages();
@@ -50,7 +49,6 @@ const WebRTCComponent: React.FC<WebRTCComponentProps> = () => {
       };
 
       wsRef.current.onclose = () => {
-        console.log("WebSocket disconnected");
         setConnectionStatus("Disconnected");
         stopSendingMessages();
       };
@@ -72,7 +70,6 @@ const WebRTCComponent: React.FC<WebRTCComponentProps> = () => {
     );
 
     dataChannelRef.current.onopen = () => {
-      console.log("Data channel opened");
       setConnectionStatus("Connected");
       setDataChannelReady(true);
       // Send any queued messages
@@ -91,12 +88,10 @@ const WebRTCComponent: React.FC<WebRTCComponentProps> = () => {
     };
 
     dataChannelRef.current.onmessage = (event) => {
-      console.log("Received message:", event.data);
       setMessages((prev) => [...prev, `Received: ${event.data}`]);
     };
 
     dataChannelRef.current.onclose = () => {
-      console.log("Data channel closed");
       setDataChannelReady(false);
     };
 
@@ -104,7 +99,6 @@ const WebRTCComponent: React.FC<WebRTCComponentProps> = () => {
     peerConnectionRef.current.ondatachannel = (event) => {
       const channel = event.channel;
       channel.onmessage = (event) => {
-        console.log("Received message:", event.data);
         setMessages((prev) => [...prev, `Received: ${event.data}`]);
       };
     };

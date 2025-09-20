@@ -1,172 +1,318 @@
-import { writeFile, mkdir } from "fs/promises";
-import { join } from "path";
+import { createClient, type RedisClientType } from "redis";
 import { type WebcamFrame } from "./messageTypes.js";
 
 export class ImageHandler {
   private frameCounter = 0;
-  private assetsDir = "./assets";
+  private redisClient: RedisClientType | null = null;
+  private isConnected = false;
+  private cleanupInterval: NodeJS.Timeout | null = null;
+  private reconnectTimeout: NodeJS.Timeout | null = null;
+  private readonly INACTIVE_TIMEOUT_MS = 5000; // 5 seconds
+  private readonly CLEANUP_INTERVAL_MS = 10000; // 10 seconds
+  private readonly RECONNECT_DELAY_MS = 5000; // 5 seconds
 
   constructor() {
-    this.ensureAssetsDir();
+    this.connect();
   }
 
-  private async ensureAssetsDir(): Promise<void> {
+  private async connect(): Promise<void> {
+    if (this.isConnected || this.redisClient) return;
+
     try {
-      await mkdir(this.assetsDir, { recursive: true });
+      this.redisClient = createClient({
+        url: "redis://localhost:6379",
+        socket: {
+          reconnectStrategy: (retries) => Math.min(retries * 100, 3000),
+        },
+      });
+
+      this.redisClient.on("error", (err) => {
+        this.isConnected = false;
+        if (err.code !== "ECONNREFUSED") {
+          console.error("Redis error:", err.message);
+        }
+        this.scheduleReconnect();
+      });
+
+      this.redisClient.on("connect", () => {
+        this.isConnected = true;
+        this.startCleanup();
+      });
+
+      this.redisClient.on("end", () => {
+        this.isConnected = false;
+      });
+
+      await this.redisClient.connect();
     } catch (error) {
-      console.error("Failed to create assets directory:", error);
+      this.isConnected = false;
+      this.redisClient = null;
+      this.scheduleReconnect();
     }
   }
 
-  /**
-   * Process webcam frame data - prints byte preview and saves image
-   */
+  private scheduleReconnect(): void {
+    if (this.reconnectTimeout) return;
+
+    this.reconnectTimeout = setTimeout(() => {
+      this.reconnectTimeout = null;
+      this.connect();
+    }, this.RECONNECT_DELAY_MS);
+  }
+
+  private startCleanup(): void {
+    if (this.cleanupInterval) return;
+
+    this.cleanupInterval = setInterval(async () => {
+      await this.cleanupInactive();
+    }, this.CLEANUP_INTERVAL_MS);
+  }
+
+  private async cleanupInactive(): Promise<void> {
+    if (!this.isConnected || !this.redisClient) return;
+
+    try {
+      const clients = await this.redisClient.sMembers("clients");
+      if (!clients.length) return;
+
+      const now = Date.now();
+      const toRemove: string[] = [];
+
+      for (const clientId of clients) {
+        const lastSeen = await this.redisClient.hGet(
+          `client:${clientId}`,
+          "last_seen"
+        );
+        if (!lastSeen) {
+          toRemove.push(clientId);
+          continue;
+        }
+
+        const timeDiff = now - new Date(lastSeen).getTime();
+        if (timeDiff > this.INACTIVE_TIMEOUT_MS) {
+          toRemove.push(clientId);
+        }
+      }
+
+      if (toRemove.length > 0) {
+        await this.removeClients(toRemove);
+      }
+    } catch (error) {
+      // Silent fail - cleanup will retry next interval
+    }
+  }
+
+  private async removeClients(clientIds: string[]): Promise<void> {
+    if (!this.isConnected || !this.redisClient) return;
+
+    try {
+      // Use pipeline for atomic operations
+      const pipeline = this.redisClient.multi();
+
+      for (const clientId of clientIds) {
+        pipeline.sRem("clients", clientId);
+        pipeline.del(`client:${clientId}`);
+        pipeline.del(`image:${clientId}`);
+      }
+
+      await pipeline.exec();
+    } catch (error) {
+      // Silent fail
+    }
+  }
+
+  public async addClient(clientId: string): Promise<void> {
+    if (!this.isConnected || !this.redisClient) return;
+
+    try {
+      const now = new Date().toISOString();
+      const pipeline = this.redisClient.multi();
+
+      pipeline.sAdd("clients", clientId);
+      pipeline.hSet(`client:${clientId}`, {
+        connected_at: now,
+        last_seen: now,
+        status: "connected",
+      });
+
+      await pipeline.exec();
+    } catch (error) {
+      // Silent fail
+    }
+  }
+
+  public async removeClient(clientId: string): Promise<void> {
+    if (!this.isConnected || !this.redisClient) return;
+    await this.removeClients([clientId]);
+  }
+
+  public async updateClientLastSeen(clientId: string): Promise<void> {
+    if (!this.isConnected || !this.redisClient) return;
+
+    try {
+      await this.redisClient.hSet(
+        `client:${clientId}`,
+        "last_seen",
+        new Date().toISOString()
+      );
+    } catch (error) {
+      // Silent fail - this is called frequently
+    }
+  }
+
   public async processWebcamFrame(frame: WebcamFrame): Promise<void> {
+    if (!this.isConnected || !this.redisClient) return;
+
     try {
       this.frameCounter++;
-      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
 
-      // Print byte preview
-      this.printBytePreview(frame);
-
-      // Process the image data
-      let imageBuffer: Buffer;
-
+      // Skip placeholder data
       if (
         frame.payload.format === "binary" &&
         frame.payload.data === "binary_data_placeholder"
       ) {
-        // This is a placeholder - we can't save this
-        console.log(
-          `⚠️  [IMAGE] Cannot save placeholder binary data for frame ${this.frameCounter}`
-        );
         return;
       }
 
+      let imageBuffer: Buffer;
+
       // Handle different data formats
       if (frame.payload.data.includes(",")) {
-        // Array format: "1,2,3,4..." from frontend
+        // Array format from frontend
         const byteArray = frame.payload.data
           .split(",")
           .map((str) => parseInt(str.trim(), 10));
         imageBuffer = Buffer.from(byteArray);
       } else {
         // Base64 format
-        try {
-          imageBuffer = Buffer.from(frame.payload.data, "base64");
-        } catch (error) {
-          console.error("Failed to decode base64 image data:", error);
-          return;
-        }
+        imageBuffer = Buffer.from(frame.payload.data, "base64");
       }
 
-      // Validate buffer
-      if (imageBuffer.length === 0) {
-        console.log(
-          `⚠️  [IMAGE] Empty image buffer for frame ${this.frameCounter}`
-        );
-        return;
-      }
+      if (imageBuffer.length === 0) return;
 
-      // Generate filename with proper clientId from the frame
-      const filename = `frame_${this.frameCounter}_${frame.clientId}_${timestamp}.jpg`;
-      const filepath = join(this.assetsDir, filename);
+      // Store image and update client activity atomically
+      const pipeline = this.redisClient.multi();
+      const now = new Date().toISOString();
 
-      // Save the image
-      await writeFile(filepath, imageBuffer);
+      pipeline.hSet(`image:${frame.clientId}`, {
+        data: imageBuffer.toString("base64"),
+        size: imageBuffer.length.toString(),
+        format: frame.payload.format,
+        timestamp: frame.timestamp || now,
+        frame_number: this.frameCounter.toString(),
+      });
 
-      console.log(
-        `💾 [IMAGE] Saved frame ${this.frameCounter}: ${filepath} (${imageBuffer.length} bytes)`
-      );
+      pipeline.hSet(`client:${frame.clientId}`, "last_seen", now);
 
-      // Print some image metadata
-      this.printImageMetadata(imageBuffer, filename);
+      await pipeline.exec();
     } catch (error) {
-      console.error(
-        `❌ [IMAGE] Error processing frame ${this.frameCounter}:`,
-        error
-      );
+      // Silent fail
     }
   }
 
-  /**
-   * Print a preview of the image bytes
-   */
-  private printBytePreview(frame: WebcamFrame): void {
-    const { payload, clientId } = frame;
+  public async getClientImage(clientId: string): Promise<any | null> {
+    if (!this.isConnected || !this.redisClient) return null;
 
-    console.log(
-      `\n🖼️  [IMAGE PREVIEW] Frame #${this.frameCounter} from ${clientId}`
-    );
-    console.log(`   Format: ${payload.format}`);
-    console.log(`   Size: ${payload.size} bytes`);
+    try {
+      const imageData = await this.redisClient.hGetAll(`image:${clientId}`);
+      if (Object.keys(imageData).length === 0) return null;
 
-    // Print first few bytes as preview
-    if (payload.data && payload.data !== "binary_data_placeholder") {
-      let previewBytes: string;
-
-      if (payload.data.includes(",")) {
-        // Array format
-        const firstBytes = payload.data.split(",", 16).join(", ");
-        previewBytes = `[${firstBytes}${
-          payload.data.split(",").length > 16 ? ", ..." : ""
-        }]`;
-      } else {
-        // Base64 or other format
-        const preview = payload.data.substring(0, 32);
-        previewBytes = `"${preview}${payload.data.length > 32 ? "..." : ""}"`;
-      }
-
-      console.log(`   Data preview: ${previewBytes}`);
-    } else {
-      console.log(`   Data: ${payload.data}`);
+      return {
+        clientId,
+        ...imageData,
+        size: parseInt(imageData.size || "0"),
+        frame_number: parseInt(imageData.frame_number || "0"),
+      };
+    } catch (error) {
+      return null;
     }
-
-    console.log(`   Timestamp: ${frame.timestamp}`);
   }
 
-  /**
-   * Print metadata about the saved image
-   */
-  private printImageMetadata(buffer: Buffer, filename: string): void {
-    // Check if it's a JPEG by looking at magic bytes
-    const isJPEG =
-      buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xd8;
-    const isPNG =
-      buffer.length >= 8 &&
-      buffer[0] === 0x89 &&
-      buffer[1] === 0x50 &&
-      buffer[2] === 0x4e &&
-      buffer[3] === 0x47;
+  public async getAllClients(): Promise<string[]> {
+    if (!this.isConnected || !this.redisClient) return [];
 
-    let fileType = "Unknown";
-    if (isJPEG) fileType = "JPEG";
-    else if (isPNG) fileType = "PNG";
-
-    console.log(`   📊 File: ${filename}`);
-    console.log(`   📊 Type: ${fileType} (detected from magic bytes)`);
-    console.log(`   📊 Buffer size: ${buffer.length} bytes`);
-    console.log(
-      `   📊 First 8 bytes: [${Array.from(buffer.slice(0, 8))
-        .map((b) => `0x${b.toString(16).padStart(2, "0")}`)
-        .join(", ")}]`
-    );
+    try {
+      return await this.redisClient.sMembers("clients");
+    } catch (error) {
+      return [];
+    }
   }
 
-  /**
-   * Get statistics about processed frames
-   */
-  public getStats(): { totalFrames: number; assetsDir: string } {
+  public async getClientMetadata(clientId: string): Promise<any | null> {
+    if (!this.isConnected || !this.redisClient) return null;
+
+    try {
+      const metadata = await this.redisClient.hGetAll(`client:${clientId}`);
+      return Object.keys(metadata).length > 0 ? metadata : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  public getStats(): {
+    totalFrames: number;
+    redisConnected: boolean;
+    redisUrl: string;
+  } {
     return {
       totalFrames: this.frameCounter,
-      assetsDir: this.assetsDir,
+      redisConnected: this.isConnected,
+      redisUrl: "redis://localhost:6379",
     };
   }
 
-  /**
-   * Reset frame counter
-   */
+  public async getClientStats(): Promise<{
+    totalClients: number;
+    clientList: string[];
+    clientsWithMetadata: Array<{ id: string; metadata: any }>;
+  }> {
+    if (!this.isConnected || !this.redisClient) {
+      return { totalClients: 0, clientList: [], clientsWithMetadata: [] };
+    }
+
+    try {
+      const clientList = await this.getAllClients();
+      const clientsWithMetadata = [];
+
+      for (const clientId of clientList) {
+        const metadata = await this.getClientMetadata(clientId);
+        clientsWithMetadata.push({ id: clientId, metadata });
+      }
+
+      return {
+        totalClients: clientList.length,
+        clientList,
+        clientsWithMetadata,
+      };
+    } catch (error) {
+      return { totalClients: 0, clientList: [], clientsWithMetadata: [] };
+    }
+  }
+
   public resetStats(): void {
     this.frameCounter = 0;
+  }
+
+  public async close(): Promise<void> {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+    }
+
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+
+    if (this.redisClient) {
+      try {
+        await this.redisClient.quit();
+      } catch (error) {
+        // Ignore quit errors
+      }
+      this.redisClient = null;
+    }
+
+    this.isConnected = false;
   }
 }

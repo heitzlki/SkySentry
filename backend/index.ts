@@ -13,46 +13,39 @@ const imageHandler = new ImageHandler();
 const myCustomMessageHandler: CustomMessageHandler = async (
   message: Message
 ) => {
+  // Update client last seen timestamp for any message
+  await imageHandler.updateClientLastSeen(message.clientId);
+
   switch (message.type) {
     case "text_message":
-      console.log(`[TEXT] ${message.clientId}: ${message.payload}`);
+      // Silent - no logging for text messages
       break;
 
     case "webcam_frame":
-      console.log(
-        `[WEBCAM] ${message.clientId}: Frame ${message.payload.size} bytes (${message.payload.format})`
-      );
-
-      // Pass to imageHandler for processing
+      // Silent - no logging for webcam frames
       await imageHandler.processWebcamFrame(message);
       break;
 
     case "connection_status":
-      console.log(
-        `[STATUS] ${message.clientId}: ${message.payload.status} - ${
-          message.payload.details || "No details"
-        }`
-      );
+      if (
+        message.payload.status === "connected" ||
+        message.payload.status === "disconnected"
+      ) {
+        console.log(`${message.clientId}: ${message.payload.status}`);
+      }
       break;
 
     case "heartbeat":
-      console.log(
-        `[HEARTBEAT] ${message.clientId}: ${message.payload.timestamp}`
-      );
+      // Silent - no logging for heartbeats
       break;
 
     case "error":
-      console.error(
-        `[ERROR] ${message.clientId}: ${message.payload.message} (${
-          message.payload.code || "NO_CODE"
-        })`
-      );
+      console.error(`${message.clientId} error: ${message.payload.message}`);
       break;
 
     default:
-      // Exhaustive check - this should never happen with proper typing
       const exhaustiveCheck: never = message;
-      console.error(`[UNKNOWN] Unhandled message type:`, exhaustiveCheck);
+      console.error(`Unknown message type:`, exhaustiveCheck);
   }
 };
 
@@ -61,55 +54,71 @@ const messageHandler = new BlackboxMessageHandler(myCustomMessageHandler);
 
 const wss = new WebSocketServer({ port: 8080 });
 
-console.log("WebRTC Signaling Server running on port 8080");
+console.log("SkySentry server running on port 8080");
 
-// Log stats every 30 seconds
-setInterval(() => {
-  const stats = messageHandler.getStats();
-  const imageStats = imageHandler.getStats();
+// Track WebSocket connections by clientId
+const clientConnections = new Map<string, any>();
+
+// Stats every 60 seconds
+setInterval(async () => {
+  const stats = imageHandler.getStats();
+  const clientStats = await imageHandler.getClientStats();
   console.log(
-    `[STATS] Total: ${stats.totalMessages}, By type:`,
-    stats.messagesByType
+    `Stats: ${stats.totalFrames} frames, ${
+      clientStats.totalClients
+    } clients, Redis: ${stats.redisConnected ? "OK" : "ERR"}`
   );
-  console.log(
-    `[IMAGE STATS] Frames processed: ${imageStats.totalFrames}, Assets dir: ${imageStats.assetsDir}`
-  );
-}, 30000);
+}, 60000);
 
 wss.on("connection", (ws) => {
-  const clientId = `Client-${Math.random().toString(36).substr(2, 9)}`;
-  console.log(`${clientId} connected`);
-
-  // Send connection status
-  messageHandler.handleMessage(
-    JSON.stringify({
-      type: "connection_status",
-      payload: {
-        status: "connected",
-        details: "WebSocket connection established",
-      },
-    }),
-    clientId
-  );
+  let clientId: string | null = null;
 
   ws.on("message", async (message) => {
     try {
       const messageString = message.toString();
       const data = JSON.parse(messageString);
 
+      // Handle client registration message (sent immediately on WebSocket open)
+      if (data.type === "client-registration") {
+        if (data.clientId && !clientId) {
+          clientId = data.clientId;
+          if (clientId) {
+            clientConnections.set(clientId, ws);
+            console.log(`${clientId} connected`);
+            await imageHandler.addClient(clientId);
+          }
+        }
+        return;
+      }
+
+      // Extract or register clientId from other messages
+      if (data.clientId && !clientId) {
+        clientId = data.clientId;
+        if (clientId) {
+          clientConnections.set(clientId, ws);
+          console.log(`${clientId} connected`);
+          // Add client to Redis
+          await imageHandler.addClient(clientId);
+        }
+      }
+
+      // If we still don't have a clientId, generate a fallback
+      if (!clientId) {
+        clientId = `Client-${Math.random().toString(36).substr(2, 9)}`;
+        clientConnections.set(clientId, ws);
+        console.log(`${clientId} connected (fallback ID)`);
+        await imageHandler.addClient(clientId);
+      }
+
       // Handle WebRTC data channel messages through blackbox
       if (data.type === "data-channel-message") {
-        // The payload is the actual message, extract it properly
         const actualPayload = data.payload;
-
-        // Determine the correct message type based on the payload structure
         let messageType: string;
         let formattedPayload: any;
 
         if (typeof actualPayload === "string") {
           if (actualPayload.startsWith("[Binary data:")) {
             messageType = "webcam_frame";
-            // Parse the binary data string to extract size
             const sizeMatch = actualPayload.match(/(\d+) bytes/);
             const size = sizeMatch ? parseInt(sizeMatch[1]) : 0;
             formattedPayload = {
@@ -122,12 +131,10 @@ wss.on("connection", (ws) => {
             formattedPayload = actualPayload;
           }
         } else if (actualPayload && typeof actualPayload === "object") {
-          // Check if it's already a properly structured message
           if (actualPayload.type) {
             messageType = actualPayload.type;
             formattedPayload = actualPayload.payload;
           } else {
-            // Determine type based on payload structure
             if (actualPayload.status) {
               messageType = "connection_status";
               formattedPayload = actualPayload;
@@ -169,8 +176,6 @@ wss.on("connection", (ws) => {
 
       // Handle WebRTC signaling messages (pass through)
       if (["offer", "answer", "ice-candidate"].includes(data.type)) {
-        console.log("Received signaling:", data.type);
-
         // Broadcast signaling messages to all other clients
         wss.clients.forEach((client) => {
           if (client !== ws && client.readyState === 1) {
@@ -183,8 +188,14 @@ wss.on("connection", (ws) => {
       // Handle other messages through blackbox
       await messageHandler.handleMessage(messageString, clientId);
     } catch (error) {
-      console.error("Error parsing message:", error);
       // Handle as raw binary data
+      if (!clientId) {
+        clientId = `Client-${Math.random().toString(36).substr(2, 9)}`;
+        clientConnections.set(clientId, ws);
+        console.log(`${clientId} connected (binary fallback ID)`);
+        await imageHandler.addClient(clientId);
+      }
+
       const messageBuffer = Buffer.isBuffer(message)
         ? message
         : Buffer.from(message as ArrayBuffer);
@@ -193,16 +204,18 @@ wss.on("connection", (ws) => {
   });
 
   ws.on("close", () => {
-    console.log(`${clientId} disconnected`);
-    messageHandler.handleMessage(
-      JSON.stringify({
-        type: "connection_status",
-        payload: {
-          status: "disconnected",
-          details: "WebSocket connection closed",
-        },
-      }),
-      clientId
-    );
+    if (clientId) {
+      console.log(`${clientId} disconnected`);
+      clientConnections.delete(clientId);
+      imageHandler.removeClient(clientId);
+    }
+  });
+
+  ws.on("error", (error) => {
+    if (clientId) {
+      console.error(`${clientId} WebSocket error:`, error.message);
+      clientConnections.delete(clientId);
+      imageHandler.removeClient(clientId);
+    }
   });
 });
