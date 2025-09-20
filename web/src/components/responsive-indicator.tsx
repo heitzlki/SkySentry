@@ -44,7 +44,7 @@ export const ResponsiveModeIndicator = ({
 
   return (
     <div
-      className={`fixed bottom-4 right-4 bg-background/80 text-foreground px-2 py-1 rounded-md text-sm z-50 ${className}`}>
+      className={`fixed bottom-4 right-4 bg-card/80 text-foreground px-2 py-1 rounded-md text-sm z-50 ${className}`}>
       Breakpoint: <span className='font-bold'>{breakpoint}</span>
     </div>
   );

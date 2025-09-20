@@ -1,26 +1,17 @@
 'use client';
 
 import { IconTrendingDown, IconTrendingUp } from '@tabler/icons-react';
-import { TrendingUp } from 'lucide-react';
+import { TrendingUp, Activity, AlertTriangle, Target } from 'lucide-react';
 import { Label, PolarRadiusAxis, RadialBar, RadialBarChart } from 'recharts';
 
 import { Badge } from '@/components/ui/badge';
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardHeader, CardContent } from '@/components/ui/card';
 import {
   ChartConfig,
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
 } from '@/components/ui/chart';
-import { SlidingNumber } from '../../components/motion-primitives/sliding-number';
 import dashboardData from '@/data/dashboard-metrics.json';
 
 const chartConfig = {
@@ -46,47 +37,49 @@ export function SectionCards() {
     dashboardData.riskLevels.high;
 
   return (
-    <div className='*:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card dark:*:data-[slot=card]:bg-card grid grid-cols-1 gap-4 px-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:shadow-xs lg:px-6 @xl/main:grid-cols-2 @5xl/main:grid-cols-3'>
+    <div className='grid grid-cols-1 gap-4 px-4 lg:px-6 @xl/main:grid-cols-2 @5xl/main:grid-cols-3'>
       {/* Total Objects Detected Card */}
-      <Card className='@container/card'>
-        <CardHeader>
-          <CardDescription>Total Objects Detected</CardDescription>
-          <CardTitle className='text-2xl font-semibold tabular-nums @[250px]/card:text-3xl flex items-center'>
-            <SlidingNumber value={dashboardData.totalObjectsDetected} />
-          </CardTitle>
-          <CardAction>
-            <Badge variant='outline'>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <div className="flex items-center space-x-2">
+            <Activity className="h-6 w-6" />
+            <h3 className="text-lg font-semibold">Total Objects Detected</h3>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className='text-2xl font-semibold tabular-nums text-foreground'>
+            {dashboardData.totalObjectsDetected}
+          </div>
+          <div className='mt-2'>
+            <Badge variant='outline' className='border-border text-muted-foreground'>
               <IconTrendingUp />+
               {dashboardData.trends.objectsDetected.percentage}%
             </Badge>
-          </CardAction>
-        </CardHeader>
-        <CardFooter className='flex-col items-start gap-1.5 text-sm'>
-          <div className='line-clamp-1 flex gap-2 font-medium'>
-            Trending up {dashboardData.trends.objectsDetected.period}{' '}
-            <IconTrendingUp className='size-4' />
           </div>
-          <div className='text-muted-foreground'>
-            Objects detected across all camera feeds
+          <div className='mt-4 text-sm'>
+            <div className='flex gap-2 font-medium text-green-400'>
+              Trending up {dashboardData.trends.objectsDetected.period}{' '}
+              <IconTrendingUp className='size-4' />
+            </div>
+            <div className='text-muted-foreground mt-1'>
+              Objects detected across all camera feeds
+            </div>
           </div>
-        </CardFooter>
+        </CardContent>
       </Card>
 
       {/* Risk Distribution Chart */}
-      <Card className='@container/card flex flex-col'>
-        <CardHeader className='items-center pb-0'>
-          <CardDescription>Risk Distribution</CardDescription>
-          <CardTitle className='text-lg font-semibold'>
-            Object Classification
-          </CardTitle>
-          <CardAction>
-            <Badge variant='outline'>
-              <IconTrendingUp />+
-              {dashboardData.trends.riskDistribution.percentage}%
-            </Badge>
-          </CardAction>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <div className="flex items-center space-x-2">
+            <AlertTriangle className="h-6 w-6" />
+            <div>
+              <h3 className="text-lg font-semibold">Object Classification</h3>
+              <p className="text-sm text-muted-foreground">Risk Distribution</p>
+            </div>
+          </div>
         </CardHeader>
-        <CardContent className='flex flex-1 items-center pb-0'>
+        <CardContent>
           <ChartContainer
             config={chartConfig}
             className='mx-auto aspect-square w-full max-w-[200px]'>
@@ -146,39 +139,44 @@ export function SectionCards() {
               />
             </RadialBarChart>
           </ChartContainer>
+          <div className='mt-4 text-sm'>
+            <div className='flex items-center gap-2 leading-none font-medium text-green-400'>
+              Risk classification trending up <TrendingUp className='h-4 w-4' />
+            </div>
+            <div className='text-muted-foreground leading-none mt-1'>
+              Distribution of detected objects by risk level
+            </div>
+          </div>
         </CardContent>
-        <CardFooter className='flex-col gap-1.5 text-sm'>
-          <div className='flex items-center gap-2 leading-none font-medium'>
-            Risk classification trending up <TrendingUp className='h-4 w-4' />
-          </div>
-          <div className='text-muted-foreground leading-none'>
-            Distribution of detected objects by risk level
-          </div>
-        </CardFooter>
       </Card>
 
       {/* Accuracy Card */}
-      <Card className='@container/card'>
-        <CardHeader>
-          <CardDescription>Detection Accuracy</CardDescription>
-          <CardTitle className='text-2xl font-semibold tabular-nums @[250px]/card:text-3xl flex items-center'>
-            <SlidingNumber value={dashboardData.accuracy} />%
-          </CardTitle>
-          <CardAction>
-            <Badge variant='outline'>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <div className="flex items-center space-x-2">
+            <Target className="h-6 w-6" />
+            <h3 className="text-lg font-semibold">Detection Accuracy</h3>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className='text-2xl font-semibold tabular-nums text-foreground'>
+            {dashboardData.accuracy}%
+          </div>
+          <div className='mt-2'>
+            <Badge variant='outline' className='border-border text-muted-foreground'>
               <IconTrendingUp />+{dashboardData.trends.accuracy.percentage}%
             </Badge>
-          </CardAction>
-        </CardHeader>
-        <CardFooter className='flex-col items-start gap-1.5 text-sm'>
-          <div className='line-clamp-1 flex gap-2 font-medium'>
-            Accuracy improved {dashboardData.trends.accuracy.period}{' '}
-            <IconTrendingUp className='size-4' />
           </div>
-          <div className='text-muted-foreground'>
-            AI model performance metrics
+          <div className='mt-4 text-sm'>
+            <div className='flex gap-2 font-medium text-green-400'>
+              Accuracy improved {dashboardData.trends.accuracy.period}{' '}
+              <IconTrendingUp className='size-4' />
+            </div>
+            <div className='text-muted-foreground mt-1'>
+              AI model performance metrics
+            </div>
           </div>
-        </CardFooter>
+        </CardContent>
       </Card>
     </div>
   );

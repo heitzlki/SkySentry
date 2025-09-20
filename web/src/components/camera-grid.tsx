@@ -1,11 +1,11 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Play, Pause, RefreshCw, Camera, AlertCircle } from "lucide-react";
 import { api, type CameraData } from "@/lib/api-client";
+import { Card, CardContent } from "@/components/ui/card";
 
 export function CameraGrid() {
   const [cameras, setCameras] = useState<CameraData[]>([]);
@@ -20,7 +20,7 @@ export function CameraGrid() {
 
       if (response.data?.success) {
         setCameras(
-          response.data.cameras.map((camera: any) => ({
+          response.data.cameras.map((camera: { id: string; status: string; [key: string]: unknown }) => ({
             ...camera,
             status: camera.status === "online" ? "online" : "offline",
           }))
@@ -125,8 +125,8 @@ export function CameraGrid() {
 
       {/* Error Display */}
       {error && (
-        <Card className="border-destructive">
-          <CardContent className="pt-6">
+        <Card>
+          <CardContent>
             <div className="flex items-center space-x-2 text-destructive">
               <AlertCircle className="h-4 w-4" />
               <span>{error}</span>
@@ -138,10 +138,10 @@ export function CameraGrid() {
       {/* Camera Grid */}
       {cameras.length === 0 ? (
         <Card>
-          <CardContent className="pt-6">
+          <CardContent>
             <div className="text-center py-8">
               <Camera className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-              <h3 className="text-lg font-semibold mb-2">No Cameras Found</h3>
+              <h3 className="text-lg font-semibold text-foreground mb-2">No Cameras Found</h3>
               <p className="text-muted-foreground">
                 Connect some cameras to start streaming
               </p>
@@ -171,22 +171,21 @@ interface CameraCardProps {
 function CameraCard({ camera, isStreaming }: CameraCardProps) {
   return (
     <Card className="overflow-hidden">
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-sm font-medium truncate">
-            {camera.id}
-          </CardTitle>
-          <Badge
-            variant={camera.status === "online" ? "default" : "secondary"}
-            className="ml-2"
-          >
-            {camera.status}
-          </Badge>
-        </div>
-      </CardHeader>
-
       <CardContent className="p-0">
-        <div className="aspect-video bg-black relative">
+        <div className="pb-2 border-b border-border">
+          <div className="flex items-center justify-between p-6 pb-4">
+            <div className="text-sm font-medium text-foreground truncate">
+              {camera.id}
+            </div>
+            <Badge
+              variant={camera.status === "online" ? "default" : "secondary"}
+              className="ml-2"
+            >
+              {camera.status}
+            </Badge>
+          </div>
+        </div>
+        <div className="aspect-video bg-muted relative">
           {camera.image ? (
             <img
               src={camera.image}
@@ -205,19 +204,19 @@ function CameraCard({ camera, isStreaming }: CameraCardProps) {
           {/* Streaming indicator */}
           {isStreaming && camera.status === "online" && (
             <div className="absolute top-2 right-2">
-              <div className="flex items-center space-x-1 bg-red-600 text-white px-2 py-1 rounded text-xs">
+              <Badge variant="destructive" className="flex items-center gap-1 px-2 py-0.5">
                 <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
                 <span>LIVE</span>
-              </div>
+              </Badge>
             </div>
           )}
         </div>
 
         {/* Camera info */}
-        <div className="p-3 bg-muted/30">
+        <div className="p-3 bg-muted">
           <div className="flex justify-between text-xs text-muted-foreground">
             <span>Frame: {camera.frameNumber}</span>
-            <span>{(camera.size / 1024).toFixed(1)} KB</span>
+            <span>{isNaN(camera.size / 1024) ? '0' : (camera.size / 1024).toFixed(1)} KB</span>
           </div>
           {camera.timestamp && (
             <div className="text-xs text-muted-foreground mt-1">

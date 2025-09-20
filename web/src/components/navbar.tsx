@@ -27,124 +27,122 @@ export type IconProps = React.HTMLAttributes<SVGElement>;
 export function Navbar() {
   return (
     <div className='fixed w-full top-0 z-50 px-4 py-5'>
-      <div className='flex flex-col items-center justify-center'>
-        <TooltipProvider>
-          <Dock direction='middle' className='mt-0 bg-card'>
-            <AnimateIcon animateOnHover>
-              <DockIcon>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Link
-                      href='/'
-                      aria-label='Dashboard'
-                      className={cn(
-                        buttonVariants({ variant: 'ghost', size: 'icon' }),
-                        'size-12 rounded-full'
-                      )}>
-                      <LayoutDashboard className='size-4' animateOnHover />
-                    </Link>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Dashboard</p>
-                  </TooltipContent>
-                </Tooltip>
-              </DockIcon>
-            </AnimateIcon>
-            <AnimateIcon animateOnHover>
-              <DockIcon>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Link
-                      href='/logs'
-                      aria-label='Logs'
-                      className={cn(
-                        buttonVariants({ variant: 'ghost', size: 'icon' }),
-                        'size-12 rounded-full'
-                      )}>
-                      <Binary />
-                    </Link>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Logs</p>
-                  </TooltipContent>
-                </Tooltip>
-              </DockIcon>
-            </AnimateIcon>
-            <AnimateIcon animateOnHover>
-              <DockIcon>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Link
-                      href='/stats'
-                      aria-label='Stats'
-                      className={cn(
-                        buttonVariants({ variant: 'ghost', size: 'icon' }),
-                        'size-12 rounded-full'
-                      )}>
-                      <ChartColumn />
-                    </Link>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Stats</p>
-                  </TooltipContent>
-                </Tooltip>
-              </DockIcon>
-            </AnimateIcon>
-            <AnimateIcon animateOnHover>
-              <DockIcon>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Link
-                      href='/map'
-                      aria-label='Map'
-                      className={cn(
-                        buttonVariants({ variant: 'ghost', size: 'icon' }),
-                        'size-12 rounded-full'
-                      )}>
-                      <Layers className='size-4' />
-                    </Link>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Map</p>
-                  </TooltipContent>
-                </Tooltip>
-              </DockIcon>
-            </AnimateIcon>
-            <AnimateIcon animateOnHover>
-              <DockIcon>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Link
-                      href='/stream'
-                      aria-label='Stream'
-                      className={cn(
-                        buttonVariants({ variant: 'ghost', size: 'icon' }),
-                        'size-12 rounded-full'
-                      )}>
-                      <Cctv className='size-4' />
-                    </Link>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Stream</p>
-                  </TooltipContent>
-                </Tooltip>
-              </DockIcon>
-            </AnimateIcon>
-            <AnimateIcon animateOnHover>
-              <DockIcon>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <ModeToggle />
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Theme</p>
-                  </TooltipContent>
-                </Tooltip>
-              </DockIcon>
-            </AnimateIcon>
-          </Dock>
-        </TooltipProvider>
-      </div>
+      <TooltipProvider>
+        <Dock direction='middle' className='mt-0 bg-card'>
+          <AnimateIcon animateOnHover>
+            <DockIcon>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Link
+                    href='/'
+                    aria-label='Dashboard'
+                    className={cn(
+                      buttonVariants({ variant: 'ghost', size: 'icon' }),
+                      'size-12 rounded-full'
+                    )}>
+                    <LayoutDashboard className='size-4' animateOnHover />
+                  </Link>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Dashboard</p>
+                </TooltipContent>
+              </Tooltip>
+            </DockIcon>
+          </AnimateIcon>
+          <AnimateIcon animateOnHover>
+            <DockIcon>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Link
+                    href='/logs'
+                    aria-label='Logs'
+                    className={cn(
+                      buttonVariants({ variant: 'ghost', size: 'icon' }),
+                      'size-12 rounded-full'
+                    )}>
+                    <Binary />
+                  </Link>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Logs</p>
+                </TooltipContent>
+              </Tooltip>
+            </DockIcon>
+          </AnimateIcon>
+          <AnimateIcon animateOnHover>
+            <DockIcon>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Link
+                    href='/stats'
+                    aria-label='Stats'
+                    className={cn(
+                      buttonVariants({ variant: 'ghost', size: 'icon' }),
+                      'size-12 rounded-full'
+                    )}>
+                    <ChartColumn />
+                  </Link>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Stats</p>
+                </TooltipContent>
+              </Tooltip>
+            </DockIcon>
+          </AnimateIcon>
+          <AnimateIcon animateOnHover>
+            <DockIcon>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Link
+                    href='/map'
+                    aria-label='Map'
+                    className={cn(
+                      buttonVariants({ variant: 'ghost', size: 'icon' }),
+                      'size-12 rounded-full'
+                    )}>
+                    <Layers className='size-4' />
+                  </Link>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Map</p>
+                </TooltipContent>
+              </Tooltip>
+            </DockIcon>
+          </AnimateIcon>
+          <AnimateIcon animateOnHover>
+            <DockIcon>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Link
+                    href='/stream'
+                    aria-label='Stream'
+                    className={cn(
+                      buttonVariants({ variant: 'ghost', size: 'icon' }),
+                      'size-12 rounded-full'
+                    )}>
+                    <Cctv className='size-4' />
+                  </Link>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Stream</p>
+                </TooltipContent>
+              </Tooltip>
+            </DockIcon>
+          </AnimateIcon>
+          <AnimateIcon animateOnHover>
+            <DockIcon>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <ModeToggle />
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Theme</p>
+                </TooltipContent>
+              </Tooltip>
+            </DockIcon>
+          </AnimateIcon>
+        </Dock>
+      </TooltipProvider>
     </div>
   );
 }
