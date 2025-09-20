@@ -47,6 +47,8 @@ import {
   IconEye,
   IconLayoutColumns,
 } from '@tabler/icons-react';
+import { EllipsisVertical } from '@/components/animate-ui/icons/ellipsis-vertical';
+import { AnimateIcon } from '@/components/animate-ui/icons/icon';
 
 // Define the detection schema based on your data structure
 export const detectionSchema = z.object({
@@ -246,12 +248,16 @@ function DetectionDetailDialog({ detection }: { detection: GroupedDetection }) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant='ghost' size='icon' className='h-8 w-8'>
-          <IconEye className='text-muted-foreground size-4' />
-          <span className='sr-only'>View details</span>
-        </Button>
-      </DialogTrigger>
+      <AnimateIcon animateOnHover>
+        <DialogTrigger asChild>
+          <Button variant='ghost' size='icon' className='h-12 w-12'>
+            <EllipsisVertical animateOnHover className='w-8' />
+
+            <span className='sr-only'>View details</span>
+          </Button>
+        </DialogTrigger>
+      </AnimateIcon>
+
       <DialogContent className='max-w-2xl'>
         <DialogHeader>
           <DialogTitle className='flex items-center gap-2'>
@@ -344,16 +350,20 @@ export function ObjectDetectionDataTable({
     {
       accessorKey: 'global_id',
       header: 'ID',
+      size: 80,
       cell: ({ row }) => (
-        <div className='font-mono text-sm'>{row.original.global_id}</div>
+        <div className='font-mono text-sm font-semibold text-center'>
+          #{row.original.global_id}
+        </div>
       ),
     },
     {
       accessorKey: 'label',
-      header: 'Object',
+      header: 'Object Type',
+      size: 180,
       cell: ({ row }) => (
         <div className='flex items-center gap-2'>
-          <Badge variant='outline' className='text-xs'>
+          <Badge variant='outline' className='text font-medium p-1'>
             {row.original.label}
           </Badge>
         </div>
@@ -361,7 +371,8 @@ export function ObjectDetectionDataTable({
     },
     {
       accessorKey: 'status',
-      header: 'Status',
+      header: 'Threat Level',
+      size: 140,
       cell: ({ row }) => (
         <Status status={row.original.status}>
           <StatusIndicator />
@@ -371,47 +382,81 @@ export function ObjectDetectionDataTable({
     },
     {
       accessorKey: 'frameCount',
-      header: 'Frames',
+      header: 'Detection Info',
+      size: 120,
       cell: ({ row }) => (
-        <div className='text-sm'>
-          <div>{row.original.frameCount}</div>
-          <div className='text-xs text-muted-foreground'>
-            {row.original.firstFrame} - {row.original.lastFrame}
+        <div className='text-sm space-y-1'>
+          <div className='font-medium'>{row.original.frameCount} frames</div>
+          <div className='text-xs text-muted-foreground font-mono'>
+            {row.original.firstFrame} → {row.original.lastFrame}
           </div>
         </div>
       ),
     },
     {
       accessorKey: 'cameraPosition',
-      header: 'Camera Coords',
+      header: 'Camera Position (m)',
+      size: 160,
       cell: ({ row }) => (
-        <div className='text-xs font-mono space-y-1'>
-          <div>X: {row.original.avgPosition.camera.x.toFixed(2)}</div>
-          <div>Y: {row.original.avgPosition.camera.y.toFixed(2)}</div>
-          <div>Z: {row.original.avgPosition.camera.z.toFixed(2)}</div>
+        <div className='text-xs font-mono bg-muted/30 rounded-md p-2 space-y-1'>
+          <div className='flex justify-between'>
+            <span className='text-muted-foreground'>X:</span>
+            <span className='font-medium'>
+              {row.original.avgPosition.camera.x.toFixed(2)}
+            </span>
+          </div>
+          <div className='flex justify-between'>
+            <span className='text-muted-foreground'>Y:</span>
+            <span className='font-medium'>
+              {row.original.avgPosition.camera.y.toFixed(2)}
+            </span>
+          </div>
+          <div className='flex justify-between'>
+            <span className='text-muted-foreground'>Z:</span>
+            <span className='font-medium'>
+              {row.original.avgPosition.camera.z.toFixed(2)}
+            </span>
+          </div>
         </div>
       ),
     },
     {
       accessorKey: 'worldPosition',
-      header: 'World Coords',
+      header: 'World Position (m)',
+      size: 160,
       cell: ({ row }) => (
-        <div className='text-xs font-mono space-y-1'>
-          <div>X: {row.original.avgPosition.world.x.toFixed(2)}</div>
-          <div>Y: {row.original.avgPosition.world.y.toFixed(2)}</div>
-          <div>Z: {row.original.avgPosition.world.z.toFixed(2)}</div>
+        <div className='text-xs font-mono bg-muted/30 rounded-md p-2 space-y-1'>
+          <div className='flex justify-between'>
+            <span className='text-muted-foreground'>X:</span>
+            <span className='font-medium'>
+              {row.original.avgPosition.world.x.toFixed(2)}
+            </span>
+          </div>
+          <div className='flex justify-between'>
+            <span className='text-muted-foreground'>Y:</span>
+            <span className='font-medium'>
+              {row.original.avgPosition.world.y.toFixed(2)}
+            </span>
+          </div>
+          <div className='flex justify-between'>
+            <span className='text-muted-foreground'>Z:</span>
+            <span className='font-medium'>
+              {row.original.avgPosition.world.z.toFixed(2)}
+            </span>
+          </div>
         </div>
       ),
     },
     {
       accessorKey: 'bbox',
       header: 'Bounding Box',
+      size: 140,
       cell: ({ row }) => (
-        <div className='text-xs font-mono space-y-1'>
-          <div>
+        <div className='text-xs space-y-1'>
+          <div className='font-medium font-mono'>
             {row.original.bbox.width} × {row.original.bbox.height}
           </div>
-          <div className='text-muted-foreground'>
+          <div className='text-muted-foreground font-mono text-[10px]'>
             ({row.original.bbox.x1}, {row.original.bbox.y1})
           </div>
         </div>
@@ -420,7 +465,12 @@ export function ObjectDetectionDataTable({
     {
       id: 'actions',
       header: 'Actions',
-      cell: ({ row }) => <DetectionDetailDialog detection={row.original} />,
+      size: 100,
+      cell: ({ row }) => (
+        <div className='flex justify-center'>
+          <DetectionDetailDialog detection={row.original} />
+        </div>
+      ),
     },
   ];
 
@@ -441,15 +491,23 @@ export function ObjectDetectionDataTable({
   });
 
   return (
-    <div className='w-full space-y-4 px-6'>
+    <div className='w-full space-y-6'>
       <div className='flex items-center justify-between'>
-        <h2 className='text-lg font-semibold'>Object Detections</h2>
+        <div>
+          <h2 className='text-xl font-semibold tracking-tight'>
+            Object Detections
+          </h2>
+          <p className='text-sm text-muted-foreground mt-1'>
+            Showing {groupedData.length} grouped detections from{' '}
+            {rawData.length} total frames
+          </p>
+        </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant='outline' size='sm'>
-              <IconLayoutColumns className='mr-2 size-4' />
+            <Button variant='outline' size='sm' className='gap-2'>
+              <IconLayoutColumns className='size-4' />
               Columns
-              <IconChevronDown className='ml-2 size-4' />
+              <IconChevronDown className='size-4' />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align='end' className='w-56'>
@@ -473,13 +531,16 @@ export function ObjectDetectionDataTable({
         </DropdownMenu>
       </div>
 
-      <div className='rounded-lg border'>
+      <div className='rounded-lg border bg-card shadow-sm'>
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
+              <TableRow key={headerGroup.id} className='border-b bg-muted/50'>
                 {headerGroup.headers.map((header) => (
-                  <TableHead key={header.id}>
+                  <TableHead
+                    key={header.id}
+                    className='font-semibold text-foreground py-4'
+                    style={{ width: header.getSize() }}>
                     {header.isPlaceholder
                       ? null
                       : flexRender(
@@ -493,10 +554,17 @@ export function ObjectDetectionDataTable({
           </TableHeader>
           <TableBody>
             {table.getRowModel().rows?.length ? (
-              table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id}>
+              table.getRowModel().rows.map((row, index) => (
+                <TableRow
+                  key={row.id}
+                  className={`border-b hover:bg-muted/30 transition-colors ${
+                    index % 2 === 0 ? 'bg-background' : 'bg-muted/10'
+                  }`}>
                   {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
+                    <TableCell
+                      key={cell.id}
+                      className='py-4'
+                      style={{ width: cell.column.getSize() }}>
                       {flexRender(
                         cell.column.columnDef.cell,
                         cell.getContext()
@@ -509,20 +577,16 @@ export function ObjectDetectionDataTable({
               <TableRow>
                 <TableCell
                   colSpan={columns.length}
-                  className='h-24 text-center'>
-                  No detections found.
+                  className='h-32 text-center text-muted-foreground'>
+                  <div className='flex flex-col items-center gap-2'>
+                    <IconEye className='size-8 opacity-50' />
+                    <p>No detections found.</p>
+                  </div>
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
-      </div>
-
-      <div className='flex items-center justify-between text-sm text-muted-foreground'>
-        <div>
-          Showing {groupedData.length} grouped detections from {rawData.length}{' '}
-          total frames
-        </div>
       </div>
     </div>
   );
