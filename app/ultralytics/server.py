@@ -94,7 +94,8 @@ async def get_all_clients(backend_url: str = Query(DEFAULT_BACKEND_URL, descript
         response = requests.get(f"{backend_url}/clients", timeout=10)
         response.raise_for_status()
         
-        data = response.json()
+        data = response.json() # data is list
+        print(data)
         if not data.get("success", False):
             raise HTTPException(
                 status_code=400, 

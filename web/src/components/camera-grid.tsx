@@ -13,11 +13,12 @@ interface CameraData {
 export function CameraGrid() {
   const [cameras, setCameras] = useState<Record<string, CameraData>>({});
   const wsRef = useRef<WebSocket | null>(null);
-  const timestampsRef = useRef<Record<string, number[]>>({});
+  const canvasRefs = useRef(new Map<string, HTMLCanvasElement>());
+  const imgRef = useRef(new Image());
 
   useEffect(() => {
     const connectWebSocket = () => {
-      const ws = new WebSocket("ws://localhost:8080/stream/ws");
+      const ws = new WebSocket("wss://demo8080.shivi.io/stream/ws");
       wsRef.current = ws;
 
       ws.onopen = () => {
@@ -29,42 +30,34 @@ export function CameraGrid() {
           const data = JSON.parse(event.data);
           if (data.type === "frame_update") {
             const { clientId, image, timestamp, size, stats } = data;
-            const now = Date.now();
             const ts = new Date(timestamp);
-
-            // Update timestamps for FPS calculation
-            if (!timestampsRef.current[clientId]) {
-              timestampsRef.current[clientId] = [];
-            }
-            timestampsRef.current[clientId].push(now);
-            // Keep only last 10 timestamps
-            if (timestampsRef.current[clientId].length > 10) {
-              timestampsRef.current[clientId].shift();
-            }
-
-            // Calculate FPS
-            const tsList = timestampsRef.current[clientId];
-            let fps = 0;
-            if (tsList.length > 1) {
-              const intervals = [];
-              for (let i = 1; i < tsList.length; i++) {
-                intervals.push(tsList[i] - tsList[i - 1]);
-              }
-              const avgInterval =
-                intervals.reduce((a, b) => a + b, 0) / intervals.length;
-              fps = Math.round(1000 / avgInterval);
-            }
 
             setCameras((prev) => ({
               ...prev,
               [clientId]: {
                 image,
                 timestamp: ts,
-                fps,
+                fps: stats?.fps || 0,
                 size,
                 frameCount: stats?.frameCount || 0,
               },
             }));
+
+            // Update canvas directly for low latency
+            const canvas = canvasRefs.current.get(clientId);
+            if (canvas) {
+              const img = imgRef.current;
+              img.onload = () => {
+                const ctx = canvas.getContext("2d");
+                if (ctx) {
+                  canvas.width = img.naturalWidth;
+                  canvas.height = img.naturalHeight;
+                  ctx.clearRect(0, 0, canvas.width, canvas.height);
+                  ctx.drawImage(img, 0, 0);
+                }
+              };
+              img.src = image;
+            }
           }
         } catch (error) {
           console.error("Error parsing WebSocket message:", error);
@@ -107,15 +100,15 @@ export function CameraGrid() {
             <div className="p-2 bg-muted/50 flex justify-between items-center">
               <span className="font-medium text-sm">{clientId}</span>
               <span className="text-xs text-muted-foreground">
-                {data.fps} FPS | {Math.round(data.size / 1024)}KB
+                {data.fps.toFixed(1)} FPS | {Math.round(data.size / 1024)}KB
               </span>
             </div>
             <div className="relative aspect-video bg-black">
-              <img
-                src={data.image}
-                alt={`Camera ${clientId}`}
+              <canvas
+                ref={(el) => {
+                  if (el) canvasRefs.current.set(clientId, el);
+                }}
                 className="w-full h-full object-contain"
-                loading="lazy"
               />
             </div>
             <div className="p-2 text-xs text-muted-foreground">
