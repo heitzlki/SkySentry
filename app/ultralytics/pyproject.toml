@@ -5,6 +5,8 @@ description = "Object detection module for SkySentry"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "fastapi[standard]>=0.116.2",
+    "httpx>=0.25.0",
     "jupyterlab>=4.4.7",
     "matplotlib>=3.10.6",
     "numpy>=2.3.3",
@@ -14,4 +16,5 @@ dependencies = [
     "requests>=2.32.5",
     "torch>=2.8.0",
     "ultralytics>=8.3.0",
+    "uvicorn>=0.36.0",
 ]
