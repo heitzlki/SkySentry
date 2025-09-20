@@ -14,11 +14,11 @@ bun install
 bun run dev
 ```
 
-The app will run on `http://localhost:5173`
+The app will run on `https://demo5173.shivi.io`
 
 ## What it does
 
-- Connects to WebRTC signaling server at `ws://localhost:8080`
+- Connects to WebRTC signaling server at `ws://demo8080.shivi.io`
 - Establishes WebRTC data channel connection
 - Sends "hi" message every second via WebRTC data channel (UDP-like)
 - Displays connection status and message history

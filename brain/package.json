@@ -6,6 +6,7 @@
     "dev": "bun run --watch src/index.ts"
   },
   "dependencies": {
+    "@elysiajs/cors": "^1.4.0",
     "@elysiajs/openapi": "^1.4.5",
     "@elysiajs/swagger": "^1.3.1",
     "drizzle-orm": "^0.44.5",

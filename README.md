@@ -40,9 +40,9 @@ bun run dev
 
 The server runs:
 
-- WebSocket signaling: `ws://localhost:8080`
-- Streaming server: `ws://localhost:8081`
-- REST API: `http://localhost:3001`
+- WebSocket signaling: `ws://demo8080.shivi.io`
+- Streaming server: `wss://demo8081.shivi.io`
+- REST API: `https://demo3001.shivi.io`
 
 ### 3. Start Capture Client (Terminal 2)
 
@@ -52,7 +52,7 @@ bun install
 bun run dev
 ```
 
-Access at: `http://localhost:5173`
+Access at: `https://demo5173.shivi.io`
 
 ### 4. Start Web Viewer (Terminal 3)
 
@@ -62,7 +62,7 @@ bun install
 bun run dev
 ```
 
-Access at: `http://localhost:3000/stream`
+Access at: `https://demo3000.shivi.io/stream`
 
 ## Performance Features
 
@@ -104,7 +104,7 @@ API_PORT=3001               # REST API
 REDIS_URL=redis://localhost:6379
 
 # Capture Client
-VITE_WEBSOCKET_URL=ws://localhost:8080
+VITE_WEBSOCKET_URL=ws://demo8080.shivi.io
 ```
 
 ## Performance Monitoring
