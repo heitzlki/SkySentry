@@ -70,11 +70,13 @@ func (rb *RingBuffer) GetLatest() *Frame {
 
 // Client represents a connected webcam producer
 type Client struct {
-	ID       string
-	Buffer   *RingBuffer
-	LastSeen time.Time
-	conn     *websocket.Conn
-	mutex    sync.RWMutex
+	ID         string
+	Buffer     *RingBuffer
+	LastSeen   time.Time
+	conn       *websocket.Conn
+	mutex      sync.RWMutex
+	timestamps []time.Time
+	fps        float64
 }
 
 // StreamServer manages all clients and viewers
@@ -105,10 +107,11 @@ func (ss *StreamServer) AddClient(clientID string, conn *websocket.Conn) {
 		existing.conn.Close()
 	}
 	ss.clients[clientID] = &Client{
-		ID:       clientID,
-		Buffer:   NewRingBuffer(ss.bufferSize),
-		LastSeen: time.Now(),
-		conn:     conn,
+		ID:         clientID,
+		Buffer:     NewRingBuffer(ss.bufferSize),
+		LastSeen:   time.Now(),
+		conn:       conn,
+		timestamps: make([]time.Time, 0, 10),
 	}
 }
 
@@ -142,6 +145,24 @@ func (ss *StreamServer) AddFrame(clientID string, frameData []byte) {
 	client.Buffer.Add(frame)
 	client.mutex.Lock()
 	client.LastSeen = frame.Timestamp
+	client.timestamps = append(client.timestamps, frame.Timestamp)
+	if len(client.timestamps) > 10 {
+		client.timestamps = client.timestamps[1:]
+	}
+	if len(client.timestamps) > 1 {
+		intervals := make([]time.Duration, 0, len(client.timestamps)-1)
+		for i := 1; i < len(client.timestamps); i++ {
+			intervals = append(intervals, client.timestamps[i].Sub(client.timestamps[i-1]))
+		}
+		avgInterval := 0.0
+		for _, d := range intervals {
+			avgInterval += d.Seconds()
+		}
+		avgInterval /= float64(len(intervals))
+		client.fps = 1.0 / avgInterval
+	} else {
+		client.fps = 0
+	}
 	client.mutex.Unlock()
 
 	go ss.broadcastFrame(clientID, frame)
@@ -176,7 +197,7 @@ func (ss *StreamServer) broadcastFrame(clientID string, frame *Frame) {
 		"image":     fmt.Sprintf("data:image/jpeg;base64,%s", base64.StdEncoding.EncodeToString(frame.Data)),
 		"timestamp": frame.Timestamp,
 		"size":      frame.Size,
-		"stats":     map[string]uint64{"frameCount": client.Buffer.frameCount},
+		"stats":     map[string]interface{}{"frameCount": client.Buffer.frameCount, "fps": client.fps},
 	}
 
 	data, err := json.Marshal(msg)
@@ -332,7 +353,7 @@ func (ss *StreamServer) handleGetLatestFrame(w http.ResponseWriter, r *http.Requ
 		"image":     fmt.Sprintf("data:image/jpeg;base64,%s", base64.StdEncoding.EncodeToString(frame.Data)),
 		"timestamp": frame.Timestamp,
 		"size":      frame.Size,
-		"stats":     map[string]uint64{"frameCount": client.Buffer.frameCount},
+		"stats":     map[string]interface{}{"frameCount": client.Buffer.frameCount, "fps": client.fps},
 	})
 }
 

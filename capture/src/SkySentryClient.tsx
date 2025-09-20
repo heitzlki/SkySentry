@@ -8,8 +8,8 @@ interface SkySentryClientProps {
 
 const SkySentryClient: React.FC<SkySentryClientProps> = ({
   clientId,
-  serverUrl = "wss://demo8080.shivi.io/ws",
-  frameRate = 20, // A more realistic default
+  serverUrl = import.meta.env.VITE_WEBSOCKET_URL || "ws://localhost:8080/ws",
+  frameRate = 30, // Increased for lower latency
 }) => {
   const [status, setStatus] = useState<
     "disconnected" | "connecting" | "connected" | "error"
@@ -29,19 +29,33 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
   const sentFrameCountRef = useRef(0);
   const droppedFramesRef = useRef(0);
   const lastFpsUpdateTimeRef = useRef(performance.now());
+  const lastSendTimeRef = useRef(0);
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
     setStatus("connecting");
+    console.log("Connecting to WebSocket:", serverUrl);
     wsRef.current = new WebSocket(serverUrl);
     wsRef.current.onopen = () => {
+      console.log("WebSocket connected to", serverUrl);
       setStatus("connected");
       wsRef.current?.send(
         JSON.stringify({ type: "client-registration", clientId })
       );
     };
-    wsRef.current.onclose = () => setStatus("disconnected");
-    wsRef.current.onerror = () => setStatus("error");
+    wsRef.current.onclose = (event) => {
+      console.log(
+        "WebSocket closed, code:",
+        event.code,
+        "reason:",
+        event.reason
+      );
+      setStatus("disconnected");
+    };
+    wsRef.current.onerror = (event) => {
+      console.error("WebSocket error:", event);
+      setStatus("error");
+    };
   }, [serverUrl, clientId]);
 
   const startCamera = useCallback(async () => {
@@ -65,6 +79,10 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
   }, [frameRate]);
 
   const captureAndSendFrame = useCallback(() => {
+    const now = performance.now();
+    if (now - lastSendTimeRef.current < 1000 / frameRate) return;
+    lastSendTimeRef.current = now;
+
     const ws = wsRef.current;
     // Aggressive check: if network is backed up, don't even bother capturing.
     if (
@@ -99,9 +117,9 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
         }
       },
       "image/jpeg",
-      0.6 // Lower quality for smaller size and faster sending
+      0.4 // Reduced quality for better performance and lower bandwidth
     );
-  }, []);
+  }, [frameRate]);
 
   const streamingLoop = useCallback(() => {
     captureAndSendFrame();
