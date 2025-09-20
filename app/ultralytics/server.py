@@ -222,11 +222,16 @@ async def process_client_with_ai(client_id: str):
     Returns:
         AI processing results with detected objects, bounding boxes, labels, and tracking info
     """
+    print(f"[DEBUG] AI processing request for client: {client_id}")
+    
     try:
         # Call your existing AI processing function
+        print(f"[DEBUG] Calling get_res_for_id for client: {client_id}")
         detections = get_res_for_id(client_id)
+        print(f"[DEBUG] get_res_for_id returned for client {client_id}: {detections}")
         
         if detections is None:
+            print(f"[WARN] Detections is None for client {client_id}")
             return AIProcessingResponse(
                 success=False,
                 client_id=client_id,
@@ -235,6 +240,7 @@ async def process_client_with_ai(client_id: str):
         
         # Handle case where detections is empty list
         if isinstance(detections, list) and len(detections) == 0:
+            print(f"[INFO] No detections found for client {client_id}")
             return AIProcessingResponse(
                 success=True,
                 client_id=client_id,
@@ -242,6 +248,7 @@ async def process_client_with_ai(client_id: str):
                 detection_count=0
             )
             
+        print(f"[INFO] Returning {len(detections)} detections for client {client_id}")
         return AIProcessingResponse(
             success=True,
             client_id=client_id,
@@ -250,6 +257,10 @@ async def process_client_with_ai(client_id: str):
         )
         
     except Exception as e:
+        print(f"[ERROR] Exception in /ai/process for client {client_id}: {str(e)}")
+        print(f"[ERROR] Exception type: {type(e).__name__}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
             status_code=500, 
             detail=f"AI processing failed for client {client_id}: {str(e)}"
