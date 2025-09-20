@@ -2,6 +2,11 @@ import "./App.css";
 import SkySentryClient from "./SkySentryClient";
 
 function App() {
+  // Generate a random 6-digit number for the client ID
+  const randomClientId = `demo-client-${Math.floor(
+    100000 + Math.random() * 900000
+  )}`;
+
   return (
     <>
       <div>
@@ -10,9 +15,9 @@ function App() {
 
         {/* Simple usage - just pass a client ID */}
         <SkySentryClient
-          clientId="demo-client-001"
+          clientId={randomClientId}
           autoStartCamera={true}
-          frameRate={100}
+          frameRate={50}
         />
 
         {/* You can easily add more clients */}

@@ -80,11 +80,28 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
       if (!peerConnectionRef.current || !isMountedRef.current) return;
 
       try {
+        const pc = peerConnectionRef.current;
+
         switch (data.type) {
+          case "waiting-for-peer":
+            console.log("Waiting for peer:", data.message);
+            setStatus("connecting"); // Keep in connecting state while waiting
+            return;
+
           case "offer":
-            await peerConnectionRef.current.setRemoteDescription(data.payload);
-            const answer = await peerConnectionRef.current.createAnswer();
-            await peerConnectionRef.current.setLocalDescription(answer);
+            // Only handle offers if we're in the right state
+            if (
+              pc.signalingState !== "stable" &&
+              pc.signalingState !== "have-remote-offer"
+            ) {
+              console.warn(`Ignoring offer in state: ${pc.signalingState}`);
+              return;
+            }
+
+            console.log("Received offer, creating answer...");
+            await pc.setRemoteDescription(data.payload);
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
             if (wsRef.current) {
               wsRef.current.send(
                 JSON.stringify({
@@ -95,11 +112,29 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
               );
             }
             break;
+
           case "answer":
-            await peerConnectionRef.current.setRemoteDescription(data.payload);
+            // Only handle answers if we're expecting one
+            if (pc.signalingState !== "have-local-offer") {
+              console.warn(`Ignoring answer in state: ${pc.signalingState}`);
+              return;
+            }
+
+            console.log("Received answer, setting remote description...");
+            await pc.setRemoteDescription(data.payload);
             break;
+
           case "ice-candidate":
-            await peerConnectionRef.current.addIceCandidate(data.payload);
+            // Only add ICE candidates if we have a remote description
+            if (pc.remoteDescription) {
+              await pc.addIceCandidate(data.payload);
+              console.log("Added ICE candidate");
+            } else {
+              // Queue the candidate for later if we don't have remote description yet
+              console.warn(
+                "Received ICE candidate before remote description, ignoring"
+              );
+            }
             break;
         }
       } catch (error) {
@@ -113,8 +148,16 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
     if (!peerConnectionRef.current || !isMountedRef.current) return;
 
     try {
-      const offer = await peerConnectionRef.current.createOffer();
-      await peerConnectionRef.current.setLocalDescription(offer);
+      const pc = peerConnectionRef.current;
+
+      // Only create offer if we're in stable state
+      if (pc.signalingState !== "stable") {
+        console.warn(`Cannot create offer in state: ${pc.signalingState}`);
+        return;
+      }
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
 
       if (wsRef.current) {
         wsRef.current.send(
@@ -161,6 +204,31 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
       };
     };
 
+    // Handle connection state changes
+    peerConnectionRef.current.onconnectionstatechange = () => {
+      if (!peerConnectionRef.current) return;
+      const state = peerConnectionRef.current.connectionState;
+      console.log(`WebRTC connection state: ${state}`);
+
+      if (state === "failed" || state === "disconnected") {
+        // Reset connection on failure
+        setTimeout(() => {
+          if (isMountedRef.current && status === "connected") {
+            console.log("Attempting to reconnect WebRTC...");
+            createOffer();
+          }
+        }, 2000);
+      }
+    };
+
+    // Handle signaling state changes
+    peerConnectionRef.current.onsignalingstatechange = () => {
+      if (!peerConnectionRef.current) return;
+      console.log(
+        `WebRTC signaling state: ${peerConnectionRef.current.signalingState}`
+      );
+    };
+
     // Handle ICE candidates
     peerConnectionRef.current.onicecandidate = (event) => {
       if (event.candidate && wsRef.current) {
@@ -174,9 +242,13 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
       }
     };
 
-    // Create offer
-    createOffer();
-  }, [createOffer]);
+    // Only create offer after a small delay to avoid race conditions
+    setTimeout(() => {
+      if (isMountedRef.current && peerConnectionRef.current) {
+        createOffer();
+      }
+    }, 100);
+  }, [createOffer, status]);
 
   // Initialize WebRTC connection
   const initializeConnection = useCallback(async () => {
@@ -252,7 +324,7 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 640, height: 480, frameRate: frameRate },
+        video: { width: 320, height: 240, frameRate: frameRate },
         audio: false,
       });
 
@@ -318,8 +390,8 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
-      canvas.width = video.videoWidth || 640;
-      canvas.height = video.videoHeight || 480;
+      canvas.width = video.videoWidth || 320;
+      canvas.height = video.videoHeight || 240;
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
       canvas.toBlob(

@@ -4,7 +4,7 @@
     "": {
       "name": "backend",
       "dependencies": {
-        "@elysiajs/cors": "^1.0.0",
+        "@elysiajs/cors": "^1.4.0",
         "@types/ws": "^8.18.1",
         "elysia": "^1.0.0",
         "redis": "^5.8.2",

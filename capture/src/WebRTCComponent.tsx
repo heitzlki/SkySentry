@@ -263,7 +263,7 @@ const WebRTCComponent: React.FC<WebRTCComponentProps> = () => {
       setWebcamStatus("Requesting camera access...");
 
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 640, height: 480, frameRate: 30 },
+        video: { width: 320, height: 240, frameRate: 30 },
         audio: false,
       });
 
@@ -300,8 +300,8 @@ const WebRTCComponent: React.FC<WebRTCComponentProps> = () => {
     if (!ctx) return;
 
     // Set canvas size to match video
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 480;
+    canvas.width = video.videoWidth || 320;
+    canvas.height = video.videoHeight || 240;
 
     // Draw current video frame to canvas
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);

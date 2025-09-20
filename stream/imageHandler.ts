@@ -65,6 +65,7 @@ export class ImageHandler {
 
     this.cleanupInterval = setInterval(async () => {
       await this.cleanupInactive();
+      console.info("ImageHandler cleanup completed");
     }, this.CLEANUP_INTERVAL_MS);
   }
 
@@ -204,6 +205,12 @@ export class ImageHandler {
 
       pipeline.hSet(`client:${frame.clientId}`, "last_seen", now);
 
+      // also ensure client is in the clients set
+      pipeline.sAdd("clients", frame.clientId);
+
+      console.info(
+        `Stored frame ${this.frameCounter} for client ${frame.clientId}, size: ${imageBuffer.length} bytes`
+      );
       await pipeline.exec();
     } catch (error) {
       // Silent fail

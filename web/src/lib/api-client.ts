@@ -3,7 +3,7 @@ import type { API } from "../../../stream/api";
 
 // Create the Eden client
 export const api = treaty<API>(
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
+  process.env.NEXT_PUBLIC_API_URL || "https://localhost:3001"
 );
 
 // Types for the camera data
