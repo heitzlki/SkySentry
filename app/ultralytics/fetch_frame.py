@@ -6,14 +6,14 @@ from typing import List, Optional
 import json
 
 # Default API base URL - can be overridden
-DEFAULT_API_URL = "http://localhost:8080/api"
+DEFAULT_API_URL = "https://demo8080.shivi.io/api"
 
 def get_clients(api_url: str = DEFAULT_API_URL) -> List[str]:
     """
     Get list of all connected client IDs from the Golang backend.
     
     Args:
-        api_url: Base URL of the SkySentry API (default: http://localhost:8080/api)
+        api_url: Base URL of the SkySentry API (default: https://demo8080.shivi.io/api)
         
     Returns:
         List of client ID strings
@@ -45,7 +45,7 @@ def get_frame(client_id: str, api_url: str = DEFAULT_API_URL) -> Optional[Image.
     
     Args:
         client_id: The client ID to fetch frame for
-        api_url: Base URL of the SkySentry API (default: http://localhost:8080/api)
+        api_url: Base URL of the SkySentry API (default: https://demo8080.shivi.io/api)
         
     Returns:
         PIL Image object if successful, None if no frame available or error
@@ -94,7 +94,7 @@ def get_frame_info(client_id: str, api_url: str = DEFAULT_API_URL) -> Optional[d
     
     Args:
         client_id: The client ID to fetch frame info for
-        api_url: Base URL of the SkySentry API (default: http://localhost:8080/api)
+        api_url: Base URL of the SkySentry API (default: https://demo8080.shivi.io/api)
         
     Returns:
         Dictionary with frame metadata (timestamp, size, stats) if successful, None otherwise

@@ -19,9 +19,9 @@ A high-performance, ultra-simple WebSocket-based webcam streaming system built w
 
 ### 1. Golang Server (`backend/`)
 
-- **WebSocket Server**: Handles capture clients on `ws://localhost:8080/ws`
-- **Streaming Server**: Broadcasts to viewers on `ws://localhost:8080/stream/ws`
-- **REST API**: HTTP endpoints on `http://localhost:8080/api/`
+- **WebSocket Server**: Handles capture clients on `ws://demo8080.shivi.io/ws`
+- **Streaming Server**: Broadcasts to viewers on `ws://demo8080.shivi.io/stream/ws`
+- **REST API**: HTTP endpoints on `https://demo8080.shivi.io/api/`
 - **Ring Buffers**: In-memory circular buffers (16 frames default per client)
 - **Auto Cleanup**: Removes inactive clients after 2 minutes
 
@@ -52,10 +52,10 @@ make start
 
 The server provides:
 
-- **WebSocket Capture**: `ws://localhost:8080/ws`
-- **WebSocket Streaming**: `ws://localhost:8080/stream/ws`
-- **REST API**: `http://localhost:8080/api/`
-- **Health Check**: `http://localhost:8080/api/health`
+- **WebSocket Capture**: `ws://demo8080.shivi.io/ws`
+- **WebSocket Streaming**: `ws://demo8080.shivi.io/stream/ws`
+- **REST API**: `https://demo8080.shivi.io/api/`
+- **Health Check**: `https://demo8080.shivi.io/api/health`
 
 ### 2. Start Capture Client
 
@@ -65,7 +65,7 @@ bun install
 bun run dev
 ```
 
-Access at: `http://localhost:5173`
+Access at: `https://demo5173.shivi.io`
 
 ### 3. Start Web Viewer
 
@@ -75,7 +75,7 @@ bun install
 bun run dev
 ```
 
-Access at: `http://localhost:3000/stream`
+Access at: `https://demo3000.shivi.io/stream`
 
 ## 📡 API Endpoints
 
@@ -114,7 +114,7 @@ const (
 ```tsx
 <SkySentryClient
   clientId="demo-client-001"
-  serverUrl="ws://localhost:8080"
+  serverUrl="ws://demo8080.shivi.io"
   autoStartCamera={true}
   frameRate={30}
 />
@@ -206,7 +206,7 @@ bun run dev    # Viewer dashboard
 
 ```bash
 # Check if server is running
-curl http://localhost:8080/api/health
+curl https://demo8080.shivi.io/api/health
 
 # View server logs
 go run main.go

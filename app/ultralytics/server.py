@@ -31,7 +31,7 @@ app.add_middleware(
 )
 
 # Configuration from environment variables
-DEFAULT_BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8080/api")
+DEFAULT_BACKEND_URL = os.getenv("BACKEND_URL", "https://demo8080.shivi.io/api")
 FASTAPI_HOST = os.getenv("FASTAPI_HOST", "0.0.0.0")
 FASTAPI_PORT = int(os.getenv("FASTAPI_PORT", "8001"))
 FASTAPI_RELOAD = os.getenv("FASTAPI_RELOAD", "true").lower() == "true"
@@ -85,7 +85,7 @@ async def get_all_clients(backend_url: str = Query(DEFAULT_BACKEND_URL, descript
     Get list of all connected client IDs from the SkySentry backend.
     
     Args:
-        backend_url: Base URL of the SkySentry API (default: http://localhost:8080/api)
+        backend_url: Base URL of the SkySentry API (default: https://demo8080.shivi.io/api)
         
     Returns:
         List of client ID strings with success status
@@ -128,7 +128,7 @@ async def get_client_frame(
     
     Args:
         client_id: The client ID to fetch frame for
-        backend_url: Base URL of the SkySentry API (default: http://localhost:8080/api)
+        backend_url: Base URL of the SkySentry API (default: https://demo8080.shivi.io/api)
         
     Returns:
         Complete frame data including base64 image, timestamp, size, and stats
@@ -175,7 +175,7 @@ async def get_client_info(
     
     Args:
         client_id: The client ID to fetch info for
-        backend_url: Base URL of the SkySentry API (default: http://localhost:8080/api)
+        backend_url: Base URL of the SkySentry API (default: https://demo8080.shivi.io/api)
         
     Returns:
         Frame metadata including timestamp, size, and buffer stats

@@ -1,11 +1,20 @@
 import { Elysia } from "elysia";
 import { swagger } from "@elysiajs/swagger";
+import { cors } from "@elysiajs/cors";
 
 // Export all types and functions for camera data
 export * from "./types";
 export * from "./fetch";
 
 const app = new Elysia()
+  .use(
+    cors({
+      origin: true, // Allow all origins
+      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+      credentials: true,
+    })
+  )
   .use(
     swagger({
       documentation: {
@@ -28,7 +37,7 @@ const app = new Elysia()
     "/cameras",
     async () => {
       const backendUrl =
-        process.env.BACKEND_API_URL || "http://localhost:8080/api";
+        process.env.BACKEND_API_URL || "https://demo8080.shivi.io/api";
 
       try {
         // First get the list of clients
@@ -111,7 +120,7 @@ const app = new Elysia()
     "/clients",
     async () => {
       const backendUrl =
-        process.env.BACKEND_API_URL || "http://localhost:8080/api";
+        process.env.BACKEND_API_URL || "https://demo8080.shivi.io/api";
 
       try {
         const response = await fetch(`${backendUrl}/clients`);
