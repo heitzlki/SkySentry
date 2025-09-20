@@ -21,7 +21,13 @@ interface CameraCardProps {
 
 export function CameraGrid() {
   const [cameras, setCameras] = useState<CameraData[]>([]);
-  const [isStreaming, setIsStreaming] = useState(false);
+  // Use localStorage to persist streaming state across page reloads
+  const [isStreaming, setIsStreaming] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("skySentry_streaming") === "true";
+    }
+    return false;
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
@@ -32,6 +38,8 @@ export function CameraGrid() {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttemptsRef = useRef<number>(0);
+  const isComponentMountedRef = useRef<boolean>(true);
+  const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const frameStatsRef = useRef<
     Record<
       string,
@@ -143,9 +151,18 @@ export function CameraGrid() {
     frameStatsRef.current[clientId] = stats;
   }, []);
 
-  // WebSocket streaming connection with improved reconnection
+  // Enhanced WebSocket connection with persistent state and heartbeat
   const connectWebSocket = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+    // Don't attempt connection if component is unmounted or streaming is disabled
+    if (!isComponentMountedRef.current || !isStreaming) return;
+
+    // Close existing connection if any
+    if (
+      wsRef.current?.readyState === WebSocket.OPEN ||
+      wsRef.current?.readyState === WebSocket.CONNECTING
+    ) {
+      wsRef.current.close();
+    }
 
     try {
       // Connect to the Golang server streaming endpoint using environment variable
@@ -159,26 +176,33 @@ export function CameraGrid() {
         if (wsRef.current?.readyState === WebSocket.CONNECTING) {
           wsRef.current.close();
           console.log("⏰ WebSocket connection timeout");
+          // Trigger reconnection attempt
+          if (isStreaming && isComponentMountedRef.current) {
+            scheduleReconnect();
+          }
         }
       }, 10000); // 10 second timeout
 
       wsRef.current.onopen = () => {
         clearTimeout(connectionTimeout);
-        console.log("Connected to streaming server");
+        console.log("✅ Connected to streaming server");
         setError(null);
         reconnectAttemptsRef.current = 0;
 
-        // Clear reconnect timeout
+        // Clear any pending reconnect timeout
         if (reconnectTimeoutRef.current) {
           clearTimeout(reconnectTimeoutRef.current);
           reconnectTimeoutRef.current = null;
         }
 
+        // Start heartbeat to detect connection issues early
+        startHeartbeat();
+
         // Start performance monitoring
         if (performanceCheckRef.current) {
           clearInterval(performanceCheckRef.current);
         }
-        performanceCheckRef.current = setInterval(adjustDisplayFPS, 5000); // Check every 5 seconds
+        performanceCheckRef.current = setInterval(adjustDisplayFPS, 5000);
       };
 
       wsRef.current.onmessage = (event) => {
@@ -271,7 +295,11 @@ export function CameraGrid() {
 
       wsRef.current.onclose = (event) => {
         clearTimeout(connectionTimeout);
-        console.log(`Streaming connection closed (code: ${event.code})`);
+        stopHeartbeat();
+
+        console.log(
+          `🔌 Streaming connection closed (code: ${event.code}, reason: ${event.reason})`
+        );
 
         // Stop performance monitoring
         if (performanceCheckRef.current) {
@@ -279,40 +307,108 @@ export function CameraGrid() {
           performanceCheckRef.current = null;
         }
 
-        // Implement exponential backoff for reconnection
-        if (isStreaming && reconnectAttemptsRef.current < 10) {
-          const delay = Math.min(
-            1000 * Math.pow(2, reconnectAttemptsRef.current),
-            30000
-          ); // Max 30 seconds
-          reconnectAttemptsRef.current++;
-
-          console.log(
-            `🔄 Attempting reconnection ${reconnectAttemptsRef.current}/10 in ${delay}ms`
-          );
-
-          reconnectTimeoutRef.current = setTimeout(() => {
-            connectWebSocket();
-          }, delay);
-        } else if (reconnectAttemptsRef.current >= 10) {
-          setError(
-            "Connection lost. Too many reconnection attempts. Please refresh the page."
-          );
+        // Only attempt reconnection if streaming is still enabled and component is mounted
+        if (isStreaming && isComponentMountedRef.current) {
+          scheduleReconnect();
         }
       };
 
       wsRef.current.onerror = (error) => {
         clearTimeout(connectionTimeout);
-        console.error("WebSocket error:", error);
-        setError(
-          "Connection to streaming server failed. Attempting to reconnect..."
-        );
+        console.error("❌ WebSocket error:", error);
+
+        // Only show error and attempt reconnection if streaming should be active
+        if (isStreaming && isComponentMountedRef.current) {
+          setError(
+            "Connection to streaming server failed. Auto-reconnecting..."
+          );
+          scheduleReconnect();
+        }
       };
     } catch (error) {
-      console.error("Failed to connect to streaming server:", error);
-      setError("Failed to connect to streaming server");
+      console.error("❌ Failed to create WebSocket connection:", error);
+      if (isStreaming && isComponentMountedRef.current) {
+        setError("Failed to connect to streaming server. Retrying...");
+        scheduleReconnect();
+      }
     }
   }, [isStreaming, updateFrameStats, MIN_FRAME_INTERVAL, adjustDisplayFPS]);
+
+  // Separate function to handle reconnection scheduling
+  const scheduleReconnect = useCallback(() => {
+    if (
+      !isStreaming ||
+      !isComponentMountedRef.current ||
+      reconnectAttemptsRef.current >= 50
+    ) {
+      if (reconnectAttemptsRef.current >= 50) {
+        setError(
+          "Maximum reconnection attempts reached. Please check your internet connection and refresh the page."
+        );
+      }
+      return;
+    }
+
+    // Clear any existing reconnect timeout
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+    }
+
+    // Exponential backoff with jitter, but cap at 30 seconds
+    const baseDelay = Math.min(
+      1000 * Math.pow(1.5, reconnectAttemptsRef.current),
+      30000
+    );
+    const jitter = Math.random() * 1000; // Add randomness to prevent thundering herd
+    const delay = baseDelay + jitter;
+
+    reconnectAttemptsRef.current++;
+
+    console.log(
+      `🔄 Scheduling reconnection attempt ${
+        reconnectAttemptsRef.current
+      }/50 in ${Math.round(delay)}ms`
+    );
+
+    setError(
+      `Connection lost. Reconnecting in ${Math.round(
+        delay / 1000
+      )}s... (attempt ${reconnectAttemptsRef.current}/50)`
+    );
+
+    reconnectTimeoutRef.current = setTimeout(() => {
+      if (isStreaming && isComponentMountedRef.current) {
+        connectWebSocket();
+      }
+    }, delay);
+  }, [isStreaming, connectWebSocket]);
+
+  // Heartbeat mechanism to detect connection issues early
+  const startHeartbeat = useCallback(() => {
+    stopHeartbeat(); // Clear any existing heartbeat
+
+    heartbeatIntervalRef.current = setInterval(() => {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        try {
+          wsRef.current.send(
+            JSON.stringify({ type: "ping", timestamp: Date.now() })
+          );
+        } catch (error) {
+          console.log("❤️ Heartbeat failed, connection may be lost");
+          if (isStreaming && isComponentMountedRef.current) {
+            scheduleReconnect();
+          }
+        }
+      }
+    }, 30000); // Send heartbeat every 30 seconds
+  }, [isStreaming, scheduleReconnect]);
+
+  const stopHeartbeat = useCallback(() => {
+    if (heartbeatIntervalRef.current) {
+      clearInterval(heartbeatIntervalRef.current);
+      heartbeatIntervalRef.current = null;
+    }
+  }, []);
 
   // Fallback HTTP API fetch using Golang server (only when WebSocket is not active)
   const fetchCameras = useCallback(async () => {
@@ -407,31 +503,66 @@ export function CameraGrid() {
     };
   }, [isStreaming, fetchCameras]);
 
-  // Handle streaming toggle
+  // Auto-start streaming on component mount if it was previously active
+  useEffect(() => {
+    isComponentMountedRef.current = true;
+
+    // If streaming was active when the page was last loaded, auto-reconnect
+    if (isStreaming) {
+      console.log("🔄 Auto-starting stream (was active before page load)");
+      connectWebSocket();
+    }
+
+    return () => {
+      isComponentMountedRef.current = false;
+    };
+  }, [connectWebSocket, isStreaming]);
+
+  // Handle streaming toggle with persistent state
   const toggleStreaming = useCallback(() => {
     setIsStreaming((prev) => {
       const newStreaming = !prev;
 
+      // Persist streaming state to localStorage
+      if (typeof window !== "undefined") {
+        localStorage.setItem("skySentry_streaming", newStreaming.toString());
+      }
+
       if (newStreaming) {
         // Start WebSocket streaming
+        console.log("🎬 Starting stream...");
+        reconnectAttemptsRef.current = 0; // Reset reconnect attempts
         connectWebSocket();
       } else {
         // Stop WebSocket streaming
+        console.log("⏹️ Stopping stream...");
+
+        // Close WebSocket connection
         if (wsRef.current) {
-          wsRef.current.close();
+          wsRef.current.close(1000, "User stopped streaming"); // Normal closure
           wsRef.current = null;
         }
 
+        // Clear all timers and intervals
         if (reconnectTimeoutRef.current) {
           clearTimeout(reconnectTimeoutRef.current);
           reconnectTimeoutRef.current = null;
         }
 
-        // Clear frame stats
+        stopHeartbeat();
+
+        if (performanceCheckRef.current) {
+          clearInterval(performanceCheckRef.current);
+          performanceCheckRef.current = null;
+        }
+
+        // Clear frame stats and error state
         setFrameStats({});
         frameStatsRef.current = {};
+        setError(null);
+        reconnectAttemptsRef.current = 0;
 
-        // Resume HTTP polling
+        // Resume HTTP polling for static updates
         fetchCameras();
       }
 
@@ -439,20 +570,27 @@ export function CameraGrid() {
     });
   }, [connectWebSocket, fetchCameras]);
 
-  // Cleanup on unmount
+  // Enhanced cleanup on unmount
   useEffect(() => {
     return () => {
+      isComponentMountedRef.current = false;
+
+      // Close WebSocket
       if (wsRef.current) {
-        wsRef.current.close();
+        wsRef.current.close(1000, "Component unmounted");
       }
+
+      // Clear all timers
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
       if (performanceCheckRef.current) {
         clearInterval(performanceCheckRef.current);
       }
+
+      stopHeartbeat();
     };
-  }, []);
+  }, [stopHeartbeat]);
 
   const handleRefresh = () => {
     setLoading(true);
