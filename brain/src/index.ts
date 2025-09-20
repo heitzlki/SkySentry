@@ -1,34 +1,110 @@
-import { Elysia } from "elysia";
-import { swagger } from "@elysiajs/swagger";
+import { Elysia } from 'elysia';
+import { swagger } from '@elysiajs/swagger';
+import { initializeDatabase } from './db/database';
+import { detectionService } from './db/detection-service';
+
+// Initialize the in-memory database
+initializeDatabase();
 
 // Export all types and functions for camera data
-export * from "./types";
-export * from "./fetch";
+export * from './types';
+export * from './fetch';
 
 const app = new Elysia()
   .use(
     swagger({
       documentation: {
         info: {
-          title: "SkySentry Brain API",
-          version: "1.0.0",
-          description: "API documentation for SkySentry Brain service",
+          title: 'SkySentry Brain API',
+          version: '1.0.0',
+          description: 'API documentation for SkySentry Brain service',
         },
         tags: [
-          { name: "cameras", description: "Camera endpoints" },
-          { name: "health", description: "Health check endpoints" },
+          { name: 'cameras', description: 'Camera endpoints' },
+          { name: 'detections', description: 'Detection data endpoints' },
+          { name: 'health', description: 'Health check endpoints' },
         ],
       },
     })
   )
-  .get("/", () => "Hello Elysia", {
-    tags: ["health"],
+  .get('/', () => 'Hello Elysia', {
+    tags: ['health'],
   })
   .get(
-    "/cameras",
+    '/detections',
+    async ({ query }) => {
+      try {
+        const { cameraId, limit } = query;
+        const detections = await detectionService.getAllDetections(cameraId);
+        const count = await detectionService.getDetectionCount(cameraId);
+
+        return {
+          success: true,
+          detections: limit ? detections.slice(0, parseInt(limit)) : detections,
+          count,
+          cameraId: cameraId || 'all',
+        };
+      } catch (error) {
+        console.error('Error in /detections endpoint:', error);
+        return {
+          success: false,
+          detections: [],
+          count: 0,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        };
+      }
+    },
+    {
+      tags: ['detections'],
+      detail: {
+        summary: 'Get detection data',
+        description:
+          'Retrieve stored detection objects from the database, optionally filtered by camera ID',
+      },
+    }
+  )
+  .get(
+    '/detections/:cameraId/latest',
+    async ({ params, query }) => {
+      try {
+        const { cameraId } = params;
+        const { limit = '10' } = query;
+
+        const detections = await detectionService.getLatestDetections(
+          cameraId,
+          parseInt(limit)
+        );
+
+        return {
+          success: true,
+          detections,
+          count: detections.length,
+          cameraId,
+        };
+      } catch (error) {
+        console.error('Error in /detections/:cameraId/latest endpoint:', error);
+        return {
+          success: false,
+          detections: [],
+          count: 0,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        };
+      }
+    },
+    {
+      tags: ['detections'],
+      detail: {
+        summary: 'Get latest detections for a camera',
+        description:
+          'Retrieve the most recent detection objects for a specific camera',
+      },
+    }
+  )
+  .get(
+    '/cameras',
     async () => {
       const backendUrl =
-        process.env.BACKEND_API_URL || "http://localhost:8080/api";
+        process.env.BACKEND_API_URL || 'http://localhost:8080/api';
 
       try {
         // First get the list of clients
@@ -42,7 +118,7 @@ const app = new Elysia()
 
         if (!clientsData.success) {
           throw new Error(
-            `Backend error: ${clientsData.error || "Unknown error"}`
+            `Backend error: ${clientsData.error || 'Unknown error'}`
           );
         }
 
@@ -64,7 +140,7 @@ const app = new Elysia()
                   ? frameData.stats?.frameCount || 0
                   : 0,
                 size: frameData.success ? frameData.size || 0 : 0,
-                status: frameData.success ? "online" : "offline",
+                status: frameData.success ? 'online' : 'offline',
               };
             } catch (error) {
               console.error(
@@ -77,7 +153,7 @@ const app = new Elysia()
                 timestamp: null,
                 frameNumber: 0,
                 size: 0,
-                status: "offline",
+                status: 'offline',
               };
             }
           })
@@ -89,29 +165,29 @@ const app = new Elysia()
           count: cameras.length,
         };
       } catch (error) {
-        console.error("Error in /cameras endpoint:", error);
+        console.error('Error in /cameras endpoint:', error);
         return {
           success: false,
           cameras: [],
           count: 0,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: error instanceof Error ? error.message : 'Unknown error',
         };
       }
     },
     {
-      tags: ["cameras"],
+      tags: ['cameras'],
       detail: {
-        summary: "Get all cameras",
+        summary: 'Get all cameras',
         description:
-          "Retrieve all available cameras with their latest frames from the backend service",
+          'Retrieve all available cameras with their latest frames from the backend service',
       },
     }
   )
   .get(
-    "/clients",
+    '/clients',
     async () => {
       const backendUrl =
-        process.env.BACKEND_API_URL || "http://localhost:8080/api";
+        process.env.BACKEND_API_URL || 'http://localhost:8080/api';
 
       try {
         const response = await fetch(`${backendUrl}/clients`);
@@ -122,20 +198,20 @@ const app = new Elysia()
 
         return response.json();
       } catch (error) {
-        console.error("Error in /clients endpoint:", error);
+        console.error('Error in /clients endpoint:', error);
         return {
           success: false,
           clients: [],
           count: 0,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: error instanceof Error ? error.message : 'Unknown error',
         };
       }
     },
     {
-      tags: ["cameras"],
+      tags: ['cameras'],
       detail: {
-        summary: "Get all clients",
-        description: "Retrieve raw client list from the backend service",
+        summary: 'Get all clients',
+        description: 'Retrieve raw client list from the backend service',
       },
     }
   )
@@ -147,3 +223,4 @@ console.log(
 console.log(
   `📚 Swagger documentation available at: http://${app.server?.hostname}:${app.server?.port}/swagger`
 );
+console.log(`🗃️ In-memory SQLite database ready for detection data storage`);
