@@ -96,16 +96,12 @@ async def get_all_clients(backend_url: str = Query(DEFAULT_BACKEND_URL, descript
         
         data = response.json() # data is list
         print(data)
-        if not data.get("success", False):
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Backend API error: {data.get('error', 'Unknown error')}"
-            )
+        clients = data if isinstance(data, list) else []
             
         return ClientsListResponse(
             success=True,
-            clients=data.get("clients", []),
-            count=len(data.get("clients", []))
+            clients=clients,
+            count=len(clients)
         )
         
     except requests.RequestException as e:
