@@ -1,7 +1,7 @@
 # yoloe_rt.py
 # pip install --upgrade ultralytics opencv-python
 import math
-import json
+from collections import deque
 from typing import List, Dict, Tuple, Any, Optional
 
 import cv2
@@ -26,6 +26,13 @@ DEFAULT_OBJ_HEIGHTS_M = {
     "paper air plane": 0.15,
     "paper airplane in hand": 0.15
 }
+
+# ---------------- Smoothing knobs ----------------
+SMOOTH_HISTORY_FRAMES = 10    # use last N frames to compute average direction
+SMOOTH_PENALTY        = 0.65  # 0..1: fraction of perpendicular motion to suppress (higher = steadier)
+GAP_RESET_FRAMES      = 60    # if a track is unseen for ≥ this many frames, reset smoothing
+TELEPORT_THRESH_PX    = 300.0 # pixel jump that resets smoothing (center-based)
+TELEPORT_THRESH_M     = 1.5   # world jump (meters) that resets smoothing
 
 # ---------------- Utilities ----------------
 def _get_masks_resized(r, frame_hw: Tuple[int, int]) -> List[np.ndarray]:
@@ -202,10 +209,109 @@ class IdentityManager:
         self.inactive = [it for it in self.inactive if (frame_idx - it["last_frame"]) <= self.reid_max_frames]
         return idx_to_gid
 
+# ---------------- Direction-aware Smoother ----------------
+class _TrackSmoother:
+    """
+    Keeps short history per gid and returns direction-biased smoothed positions.
+    We smooth both pixel center (cx,cy) and world coords (Xw,Yw,Zw) when available.
+    """
+    def __init__(self):
+        # gid -> state dict
+        self.state: Dict[int, Dict[str, Any]] = {}
+        # history deques
+        self.hist_px: Dict[int, deque] = {}   # deque[(frame_idx, cx, cy)]
+        self.hist_w:  Dict[int, deque] = {}   # deque[(frame_idx, Xw, Yw, Zw or None)]
+
+    def reset_gid(self, gid: int):
+        self.state.pop(gid, None)
+        self.hist_px.pop(gid, None)
+        self.hist_w.pop(gid, None)
+
+    def _avg_dir_2d(self, q) -> Optional[np.ndarray]:
+        """Average unit direction over recent deltas in queue of (f,x,y)."""
+        if len(q) < 2:
+            return None
+        # use last up to N deltas
+        pts = list(q)[-SMOOTH_HISTORY_FRAMES:]
+        vec = np.zeros(2, np.float32)
+        for i in range(1, len(pts)):
+            _, x1, y1 = pts[i-1]
+            _, x2, y2 = pts[i]
+            d = np.array([x2 - x1, y2 - y1], np.float32)
+            n = np.linalg.norm(d)
+            if n > 1e-6:
+                vec += d / n
+        n = np.linalg.norm(vec)
+        if n < 1e-6:
+            return None
+        return vec / n
+
+    def _smooth_point(self, gid: int, frame_idx: int,
+                      raw_pt: Tuple[float, float],
+                      hist_map: Dict[int, deque],
+                      teleport_thresh: float) -> Tuple[float, float]:
+        """Generic 2D smoother working on (cx,cy) or (Xw,Yw)."""
+        x, y = raw_pt
+
+        q = hist_map.setdefault(gid, deque(maxlen=SMOOTH_HISTORY_FRAMES + 2))
+        # reset on big gaps
+        if q and (frame_idx - q[-1][0]) >= GAP_RESET_FRAMES:
+            q.clear()
+
+        # teleport reset
+        if q:
+            _, px, py = q[-1]
+            if math.hypot(x - px, y - py) > teleport_thresh:
+                q.clear()
+
+        # if no history left, just seed and return raw
+        if not q:
+            q.append((frame_idx, x, y))
+            return x, y
+
+        # compute direction & decompose current motion relative to last point
+        _, px, py = q[-1]
+        d_avg = self._avg_dir_2d(q)
+        vx, vy = (x - px), (y - py)
+
+        if d_avg is None:
+            # not enough motion history; mild EMA towards raw
+            alpha = 0.5
+            sx = px + alpha * vx
+            sy = py + alpha * vy
+        else:
+            d = d_avg.astype(np.float32)
+            v = np.array([vx, vy], np.float32)
+
+            # parallel / perpendicular components
+            v_par_mag = float(np.dot(v, d))
+            v_par = d * v_par_mag
+            v_perp = v - v_par
+
+            # penalize perpendicular wobble
+            v_perp *= (1.0 - SMOOTH_PENALTY)
+
+            # assemble new smoothed point
+            sx, sy = (np.array([px, py], np.float32) + v_par + v_perp).tolist()
+
+        q.append((frame_idx, sx, sy))
+        return float(sx), float(sy)
+
+    def smooth_px(self, gid: int, frame_idx: int, cx: float, cy: float) -> Tuple[float, float]:
+        return self._smooth_point(gid, frame_idx, (cx, cy), self.hist_px, TELEPORT_THRESH_PX)
+
+    def smooth_world(self, gid: int, frame_idx: int,
+                     Xw: Optional[float], Yw: Optional[float]) -> Tuple[Optional[float], Optional[float]]:
+        if Xw is None or Yw is None:
+            # if no world point, don't update world history
+            return Xw, Yw
+        sx, sy = self._smooth_point(gid, frame_idx, (Xw, Yw), self.hist_w, TELEPORT_THRESH_M)
+        return sx, sy
+
 # ---------------- Public Module Class ----------------
 class YoloeRealtime:
     """
-    Importable, stateful realtime YOLOE processor.
+    Importable, stateful realtime YOLOE processor with direction-aware smoothing.
     Usage:
         rt = YoloeRealtime(weights="yoloe-11s-seg.pt")
         json_list, vis = rt.process_frame(frame, return_vis=True)
@@ -252,15 +358,19 @@ class YoloeRealtime:
         self.idman = IdentityManager(self.classes, continuity_groups, reid_max_radius_px, reid_max_frames)
         self.frame_idx = 0
 
+        # smoothing state
+        self.smoother = _TrackSmoother()
+
         # Intrinsics / extrinsics (filled on first frame)
         self.fx = None; self.fy = None; self.cx = None; self.cy = None
         self.R_wc = _rot_x(-self.cam_pitch_deg)  # camera->world
         self.cam_pos_w = np.array([0.0, 0.0, self.cam_height_m], dtype=np.float32)
 
     def reset_ids(self):
-        """Clear identity state and frame counter (e.g., when starting a new stream)."""
+        """Clear identity and smoothing state and frame counter."""
         self.idman = IdentityManager(self.classes, DEFAULT_CONTINUITY_GROUPS, 
                                      self.idman.reid_max_radius_px, self.idman.reid_max_frames)
+        self.smoother = _TrackSmoother()
         self.frame_idx = 0
 
     def process_frame(self, frame_bgr: np.ndarray, return_vis: bool = False) -> Tuple[List[Dict[str, Any]], Optional[np.ndarray]]:

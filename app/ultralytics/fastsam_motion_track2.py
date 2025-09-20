@@ -9,7 +9,7 @@ from typing import List, Dict, Tuple, Any, Optional
 from ultralytics import YOLOE
 
 # ---------------- Config ----------------
-VIDEO_PATH = "test_videos/test_video9.mp4"
+VIDEO_PATH = "test_videos/test_video13.mp4"
 OUT_DIR    = Path("out_yoloe_prompt_track_persist_v2"); OUT_DIR.mkdir(parents=True, exist_ok=True)
 CSV_PATH   = OUT_DIR / "detections.csv"
 
@@ -25,7 +25,7 @@ CLASSES    = ["white bottle", "paper sign in hand", "paper air plane", "black bo
 CONTINUITY_GROUPS = [
     {"paper air plane", "paper airplane in hand"},
     {"white bottle", "black bottle"}
-    # add more sets if you want, e.g. {"white bottle", "black bottle"}
+ 
 ]
 
 

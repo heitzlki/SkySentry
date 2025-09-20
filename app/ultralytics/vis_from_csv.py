@@ -12,7 +12,7 @@ from pathlib import Path
 from collections import defaultdict, deque
 
 # ---------------- Config ----------------
-VIDEO_PATH = "test_videos/test_video12.mp4"
+VIDEO_PATH = "test_videos/test_video13.mp4"
 CSV_PATH   = "out_yoloe_prompt_track_persist_v2/detections.csv"
 OUT_PATH   = "out_yoloe_prompt_track_persist_v2/viz_side_by_side.mp4"
 
