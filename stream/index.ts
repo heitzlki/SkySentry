@@ -12,12 +12,26 @@ import cors from "@elysiajs/cors";
 // Initialize the image handler
 const imageHandler = new ImageHandler();
 
-// Your custom message handler function - customize this as needed
+// In-memory frame cache for ultra-low latency
+const frameCache = new Map<
+  string,
+  {
+    data: Buffer;
+    timestamp: number;
+    frameNumber: number;
+    size: number;
+  }
+>();
+
+// WebSocket connections for real-time broadcasting
+const streamSubscribers = new Set<any>();
+
+// Your custom message handler function - optimized for performance
 const myCustomMessageHandler: CustomMessageHandler = async (
   message: Message
 ) => {
-  // Update client last seen timestamp for any message
-  await imageHandler.updateClientLastSeen(message.clientId);
+  // Update client last seen timestamp for any message (non-blocking)
+  imageHandler.updateClientLastSeen(message.clientId).catch(() => {});
 
   switch (message.type) {
     case "text_message":
@@ -25,8 +39,63 @@ const myCustomMessageHandler: CustomMessageHandler = async (
       break;
 
     case "webcam_frame":
-      // Silent - no logging for webcam frames
-      await imageHandler.processWebcamFrame(message);
+      // Cache frame in memory for instant access
+      if (
+        message.payload.data &&
+        message.payload.data !== "binary_data_placeholder"
+      ) {
+        try {
+          let frameBuffer: Buffer;
+
+          // Optimize data parsing
+          if (typeof message.payload.data === "string") {
+            if (message.payload.data.includes(",")) {
+              // Fast array parsing
+              const byteArray = new Uint8Array(
+                message.payload.data.split(",").map((str) => parseInt(str, 10))
+              );
+              frameBuffer = Buffer.from(byteArray);
+            } else {
+              frameBuffer = Buffer.from(message.payload.data, "base64");
+            }
+          } else {
+            frameBuffer = Buffer.from(message.payload.data);
+          }
+
+          // Cache frame for instant access
+          const frameData = {
+            data: frameBuffer,
+            timestamp: Date.now(),
+            frameNumber:
+              (frameCache.get(message.clientId)?.frameNumber ?? 0) + 1,
+            size: frameBuffer.length,
+          };
+
+          frameCache.set(message.clientId, frameData);
+
+          // Broadcast to streaming subscribers immediately
+          const streamData = JSON.stringify({
+            type: "frame_update",
+            clientId: message.clientId,
+            frame: frameBuffer.toString("base64"),
+            timestamp: frameData.timestamp,
+            frameNumber: frameData.frameNumber,
+            size: frameData.size,
+          });
+
+          // Broadcast to all streaming subscribers (non-blocking)
+          streamSubscribers.forEach((ws) => {
+            if (ws.readyState === 1) {
+              ws.send(streamData);
+            }
+          });
+
+          // Store in Redis asynchronously (non-blocking)
+          imageHandler.processWebcamFrame(message).catch(() => {});
+        } catch (error) {
+          // Silent fail - don't block processing
+        }
+      }
       break;
 
     case "connection_status":
@@ -55,9 +124,45 @@ const myCustomMessageHandler: CustomMessageHandler = async (
 // Initialize the blackbox handler with your custom handler
 const messageHandler = new BlackboxMessageHandler(myCustomMessageHandler);
 
-// Create Elisia app with API routes
+// Create optimized API with streaming endpoints
+const optimizedApi = new Elysia({ prefix: "/api" })
+  .use(cors())
+  // Fast streaming endpoint
+  .get("/stream/ws", ({ request }) => {
+    const upgradeHeader = request.headers.get("upgrade");
+    if (upgradeHeader !== "websocket") {
+      return new Response("Expected websocket", { status: 400 });
+    }
+
+    // This will be handled by WebSocket server
+    return new Response(null, { status: 101 });
+  })
+  // Fast frame access from memory cache
+  .get("/cameras/live", async () => {
+    const cameras = Array.from(frameCache.entries()).map(
+      ([clientId, frame]) => ({
+        id: clientId,
+        image: `data:image/jpeg;base64,${frame.data.toString("base64")}`,
+        timestamp: new Date(frame.timestamp).toISOString(),
+        frameNumber: frame.frameNumber,
+        size: frame.size,
+        status: "online",
+      })
+    );
+
+    return {
+      success: true,
+      cameras,
+      count: cameras.length,
+      cached: true,
+    };
+  })
+  // Keep existing API for compatibility
+  .use(api);
+
+// Create Elysia app with optimized API routes
 const app = new Elysia()
-  .use(api)
+  .use(optimizedApi)
   .use(cors({ origin: "*" }))
   .listen(parseInt(process.env.API_PORT || "3001"));
 
@@ -67,9 +172,14 @@ console.log(
   }`
 );
 
-// WebSocket server on port 8080
+// Optimized WebSocket server
 const wss = new WebSocketServer({
   port: parseInt(process.env.WEBSOCKET_PORT || "8080"),
+});
+
+// Streaming WebSocket server for real-time frame broadcasting
+const streamingWss = new WebSocketServer({
+  port: parseInt(process.env.STREAMING_PORT || "8081"),
 });
 
 console.log(
@@ -78,6 +188,43 @@ console.log(
   }`
 );
 
+console.log(
+  `SkySentry Streaming server running on port ${
+    process.env.STREAMING_PORT || "8081"
+  }`
+);
+
+// Handle streaming WebSocket connections
+streamingWss.on("connection", (ws) => {
+  console.log("Streaming client connected");
+  streamSubscribers.add(ws);
+
+  // Send current frames immediately
+  for (const [clientId, frame] of frameCache.entries()) {
+    const streamData = JSON.stringify({
+      type: "frame_update",
+      clientId,
+      frame: frame.data.toString("base64"),
+      timestamp: frame.timestamp,
+      frameNumber: frame.frameNumber,
+      size: frame.size,
+    });
+
+    if (ws.readyState === 1) {
+      ws.send(streamData);
+    }
+  }
+
+  ws.on("close", () => {
+    streamSubscribers.delete(ws);
+    console.log("Streaming client disconnected");
+  });
+
+  ws.on("error", () => {
+    streamSubscribers.delete(ws);
+  });
+});
+
 // Track WebSocket connections by clientId
 const clientConnections = new Map<string, any>();
 // Track which clients are looking for peers
@@ -85,18 +232,30 @@ const availableClients = new Set<string>();
 // Track active peer connections
 const peerConnections = new Map<string, string>(); // clientId -> peerId
 
-// Stats every 60 seconds
+// Optimized stats logging (reduced frequency)
 setInterval(async () => {
   const stats = imageHandler.getStats();
   const clientStats = await imageHandler.getClientStats();
   console.log(
     `Stats: ${stats.totalFrames} frames, ${
       clientStats.totalClients
-    } clients, Redis: ${stats.redisConnected ? "OK" : "ERR"}, Active peers: ${
-      peerConnections.size / 2
-    }`
+    } clients, Cache: ${frameCache.size}, Redis: ${
+      stats.redisConnected ? "OK" : "ERR"
+    }, Active peers: ${peerConnections.size / 2}`
   );
-}, 60000);
+}, 30000); // Reduced from 60s to 30s
+
+// Clean up frame cache periodically
+setInterval(() => {
+  const now = Date.now();
+  const maxAge = 10000; // 10 seconds
+
+  for (const [clientId, frame] of frameCache.entries()) {
+    if (now - frame.timestamp > maxAge) {
+      frameCache.delete(clientId);
+    }
+  }
+}, 5000);
 
 wss.on("connection", (ws) => {
   let clientId: string | null = null;
@@ -141,12 +300,13 @@ wss.on("connection", (ws) => {
         await imageHandler.addClient(clientId);
       }
 
-      // Handle WebRTC data channel messages through blackbox
+      // Handle WebRTC data channel messages through blackbox - OPTIMIZED
       if (data.type === "data-channel-message") {
         const actualPayload = data.payload;
         let messageType: string;
         let formattedPayload: any;
 
+        // Fast message type detection
         if (typeof actualPayload === "string") {
           if (actualPayload.startsWith("[Binary data:")) {
             messageType = "webcam_frame";
@@ -198,31 +358,21 @@ wss.on("connection", (ws) => {
           timestamp: new Date().toISOString(),
         };
 
-        await messageHandler.handleMessage(
-          JSON.stringify(actualMessage),
-          clientId
-        );
+        // Process message asynchronously to avoid blocking
+        messageHandler
+          .handleMessage(JSON.stringify(actualMessage), clientId)
+          .catch(() => {});
         return;
       }
 
       // Handle WebRTC signaling messages with proper peer matching
       if (["offer", "answer", "ice-candidate"].includes(data.type)) {
-        console.log(
-          `[SIGNALING] ${clientId} sent ${data.type}, available peers: ${
-            availableClients.size
-          }, peer connections: ${peerConnections.size / 2}`
-        );
-
         if (data.type === "offer") {
           // Remove this client from available pool since they're creating an offer
           availableClients.delete(clientId);
 
           // Find an available peer to send the offer to
           const availablePeers = Array.from(availableClients);
-          console.log(
-            `[PAIRING] Available peers for ${clientId}:`,
-            availablePeers
-          );
 
           if (availablePeers.length > 0) {
             const targetPeer = availablePeers[0]; // Take the first available peer
@@ -249,9 +399,6 @@ wss.on("connection", (ws) => {
           } else {
             // No available peers, put this client back in available pool
             availableClients.add(clientId);
-            console.log(
-              `[WAITING] ${clientId} waiting for peer (${availableClients.size} clients available)`
-            );
 
             // Send a message back to client indicating they're waiting
             if (ws.readyState === 1) {
@@ -270,25 +417,14 @@ wss.on("connection", (ws) => {
             const targetWs = clientConnections.get(targetPeer);
             if (targetWs && targetWs.readyState === 1) {
               targetWs.send(JSON.stringify(data));
-              console.log(
-                `[RELAY] ${data.type} from ${clientId} to ${targetPeer}`
-              );
-            } else {
-              console.error(
-                `[ERROR] Cannot relay ${data.type} - target peer ${targetPeer} not available`
-              );
             }
-          } else {
-            console.warn(
-              `[WARNING] ${clientId} sent ${data.type} but has no paired peer`
-            );
           }
         }
         return;
       }
 
-      // Handle other messages through blackbox
-      await messageHandler.handleMessage(messageString, clientId);
+      // Handle other messages through blackbox (non-blocking)
+      messageHandler.handleMessage(messageString, clientId).catch(() => {});
     } catch (error) {
       // Handle as raw binary data
       if (!clientId) {
@@ -302,7 +438,7 @@ wss.on("connection", (ws) => {
       const messageBuffer = Buffer.isBuffer(message)
         ? message
         : Buffer.from(message as ArrayBuffer);
-      await messageHandler.handleMessage(messageBuffer, clientId);
+      messageHandler.handleMessage(messageBuffer, clientId).catch(() => {});
     }
   });
 
@@ -311,6 +447,7 @@ wss.on("connection", (ws) => {
       console.log(`${clientId} disconnected`);
       clientConnections.delete(clientId);
       availableClients.delete(clientId);
+      frameCache.delete(clientId); // Clean up frame cache
 
       // Clean up peer connection if exists
       const pairedPeer = peerConnections.get(clientId);
@@ -333,6 +470,7 @@ wss.on("connection", (ws) => {
       console.error(`${clientId} WebSocket error:`, error.message);
       clientConnections.delete(clientId);
       availableClients.delete(clientId);
+      frameCache.delete(clientId); // Clean up frame cache
 
       // Clean up peer connection if exists
       const pairedPeer = peerConnections.get(clientId);

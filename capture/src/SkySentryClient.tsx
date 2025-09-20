@@ -11,7 +11,7 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
   clientId,
   serverUrl = import.meta.env.VITE_WEBSOCKET_URL || "ws://localhost:8080",
   autoStartCamera = false,
-  frameRate = 10,
+  frameRate = 30, // Increased default frame rate
 }) => {
   const [status, setStatus] = useState<
     "disconnected" | "connecting" | "connected" | "error"
@@ -31,11 +31,14 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
   const isInitializingRef = useRef<boolean>(false);
   const isMountedRef = useRef<boolean>(true);
 
+  // Performance optimization - track last frame time
+  const lastFrameTimeRef = useRef<number>(0);
+
   const configuration: RTCConfiguration = {
     iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
   };
 
-  // Blackbox message sending function
+  // Optimized message sending function with direct binary support
   const sendMessage = useCallback(
     (type: string, payload: any) => {
       if (!isMountedRef.current) return false;
@@ -65,7 +68,6 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
           return true;
         }
 
-        console.warn("No connection available to send message");
         return false;
       } catch (error) {
         console.error("Error sending message:", error);
@@ -75,62 +77,90 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
     [clientId]
   );
 
+  // Optimized binary frame sending
+  const sendBinaryFrame = useCallback(
+    (buffer: ArrayBuffer) => {
+      if (!isMountedRef.current) return false;
+
+      try {
+        // Convert to base64 for transmission (optimized)
+        const uint8Array = new Uint8Array(buffer);
+        let binary = "";
+        const len = uint8Array.byteLength;
+        for (let i = 0; i < len; i++) {
+          binary += String.fromCharCode(uint8Array[i]);
+        }
+        const base64 = btoa(binary);
+
+        const frameMessage = {
+          type: "webcam_frame",
+          payload: {
+            data: base64,
+            size: buffer.byteLength,
+            format: "jpeg",
+            timestamp: Date.now(),
+          },
+          clientId,
+          timestamp: new Date().toISOString(),
+        };
+
+        // Try WebRTC data channel first
+        if (dataChannelRef.current?.readyState === "open") {
+          dataChannelRef.current.send(JSON.stringify(frameMessage));
+          return true;
+        }
+
+        // Fallback to WebSocket
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          wsRef.current.send(
+            JSON.stringify({
+              type: "data-channel-message",
+              payload: frameMessage,
+            })
+          );
+          return true;
+        }
+
+        return false;
+      } catch (error) {
+        console.error("Error sending binary frame:", error);
+        return false;
+      }
+    },
+    [clientId]
+  );
+
+  // Handle signaling messages
   const handleSignalingMessage = useCallback(
     async (data: any) => {
       if (!peerConnectionRef.current || !isMountedRef.current) return;
 
       try {
-        const pc = peerConnectionRef.current;
-
         switch (data.type) {
-          case "waiting-for-peer":
-            console.log("Waiting for peer:", data.message);
-            setStatus("connecting"); // Keep in connecting state while waiting
-            return;
-
           case "offer":
-            // Only handle offers if we're in the right state
-            if (
-              pc.signalingState !== "stable" &&
-              pc.signalingState !== "have-remote-offer"
-            ) {
-              console.warn(`Ignoring offer in state: ${pc.signalingState}`);
-              return;
-            }
+            await peerConnectionRef.current.setRemoteDescription(data.payload);
+            const answer = await peerConnectionRef.current.createAnswer();
+            await peerConnectionRef.current.setLocalDescription(answer);
 
-            console.log("Received offer, creating answer...");
-            await pc.setRemoteDescription(data.payload);
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
             if (wsRef.current) {
               wsRef.current.send(
                 JSON.stringify({
                   type: "answer",
                   payload: answer,
-                  clientId, // Add clientId to signaling messages
+                  clientId,
                 })
               );
             }
             break;
 
           case "answer":
-            // Only handle answers if we're expecting one
-            if (pc.signalingState !== "have-local-offer") {
-              console.warn(`Ignoring answer in state: ${pc.signalingState}`);
-              return;
-            }
-
-            console.log("Received answer, setting remote description...");
-            await pc.setRemoteDescription(data.payload);
+            await peerConnectionRef.current.setRemoteDescription(data.payload);
             break;
 
           case "ice-candidate":
-            // Only add ICE candidates if we have a remote description
-            if (pc.remoteDescription) {
-              await pc.addIceCandidate(data.payload);
-              console.log("Added ICE candidate");
+            if (peerConnectionRef.current.remoteDescription) {
+              await peerConnectionRef.current.addIceCandidate(data.payload);
             } else {
-              // Queue the candidate for later if we don't have remote description yet
               console.warn(
                 "Received ICE candidate before remote description, ignoring"
               );
@@ -164,7 +194,7 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
           JSON.stringify({
             type: "offer",
             payload: offer,
-            clientId, // Add clientId to offer messages
+            clientId,
           })
         );
       }
@@ -178,29 +208,29 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
 
     peerConnectionRef.current = new RTCPeerConnection(configuration);
 
-    // Create data channel
+    // Create data channel with optimized settings
     dataChannelRef.current = peerConnectionRef.current.createDataChannel(
       "messages",
       {
-        ordered: true,
+        ordered: false, // Allow out-of-order delivery for better performance
+        maxRetransmits: 0, // Don't retransmit for real-time streaming
       }
     );
 
     dataChannelRef.current.onopen = () => {
       if (!isMountedRef.current) return;
-      // Removed frequent data channel opened log
       setStatus("connected");
     };
 
     dataChannelRef.current.onclose = () => {
-      // Removed frequent data channel closed log
+      // Silent
     };
 
-    // Handle incoming data channel
+    // Handle incoming data channel - removed unused event parameter
     peerConnectionRef.current.ondatachannel = (event) => {
       const channel = event.channel;
-      channel.onmessage = (event) => {
-        // Removed frequent P2P message log
+      channel.onmessage = () => {
+        // Silent - optimized for performance
       };
     };
 
@@ -208,7 +238,6 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
     peerConnectionRef.current.onconnectionstatechange = () => {
       if (!peerConnectionRef.current) return;
       const state = peerConnectionRef.current.connectionState;
-      console.log(`WebRTC connection state: ${state}`);
 
       if (state === "failed" || state === "disconnected") {
         // Reset connection on failure
@@ -221,14 +250,6 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
       }
     };
 
-    // Handle signaling state changes
-    peerConnectionRef.current.onsignalingstatechange = () => {
-      if (!peerConnectionRef.current) return;
-      console.log(
-        `WebRTC signaling state: ${peerConnectionRef.current.signalingState}`
-      );
-    };
-
     // Handle ICE candidates
     peerConnectionRef.current.onicecandidate = (event) => {
       if (event.candidate && wsRef.current) {
@@ -236,19 +257,19 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
           JSON.stringify({
             type: "ice-candidate",
             payload: event.candidate,
-            clientId, // Add clientId to ICE candidate messages
+            clientId,
           })
         );
       }
     };
 
-    // Only create offer after a small delay to avoid race conditions
+    // Create offer after a delay to avoid race conditions
     setTimeout(() => {
       if (isMountedRef.current && peerConnectionRef.current) {
         createOffer();
       }
     }, 100);
-  }, [createOffer, status]);
+  }, [createOffer, status, clientId]);
 
   // Initialize WebRTC connection
   const initializeConnection = useCallback(async () => {
@@ -268,7 +289,7 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
       wsRef.current.onopen = () => {
         if (!isMountedRef.current) return;
 
-        // Send clientId immediately so backend can register us with the correct ID
+        // Send clientId immediately
         if (wsRef.current) {
           wsRef.current.send(
             JSON.stringify({
@@ -279,7 +300,6 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
           );
         }
 
-        // Removed frequent WebSocket connected log
         createPeerConnection();
         sendMessage("connection_status", {
           status: "connected",
@@ -300,7 +320,6 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
       wsRef.current.onclose = () => {
         if (!isMountedRef.current) return;
         setStatus("disconnected");
-        // Removed frequent WebSocket disconnected log
         isInitializingRef.current = false;
       };
 
@@ -314,9 +333,15 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
       setStatus("error");
       isInitializingRef.current = false;
     }
-  }, [serverUrl, sendMessage, createPeerConnection, handleSignalingMessage]);
+  }, [
+    serverUrl,
+    sendMessage,
+    createPeerConnection,
+    handleSignalingMessage,
+    clientId,
+  ]);
 
-  // Camera functions
+  // Optimized camera functions
   const startCamera = useCallback(async () => {
     if (!isMountedRef.current || streamRef.current) return false;
 
@@ -324,12 +349,15 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 320, height: 240, frameRate: frameRate },
+        video: {
+          width: { ideal: 640, max: 1280 },
+          height: { ideal: 480, max: 720 },
+          frameRate: { ideal: frameRate, max: 60 },
+        },
         audio: false,
       });
 
       if (!isMountedRef.current) {
-        // Component unmounted during async operation
         stream.getTracks().forEach((track) => track.stop());
         return false;
       }
@@ -337,14 +365,12 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        // Use a promise-based approach for play() to handle interruptions
         try {
           await videoRef.current.play();
         } catch (playError: unknown) {
           if (playError instanceof Error && playError.name !== "AbortError") {
             console.error("Video play error:", playError);
           }
-          // AbortError is expected when component is remounting, ignore it
         }
       }
 
@@ -365,6 +391,7 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
     }
   }, [frameRate, sendMessage]);
 
+  // High-performance streaming with optimized frame capture
   const startStreaming = useCallback(() => {
     if (
       !streamRef.current ||
@@ -385,40 +412,57 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
       )
         return;
 
+      const now = performance.now();
+      const timeSinceLastFrame = now - lastFrameTimeRef.current;
+      const targetInterval = 1000 / frameRate;
+
+      // Skip frame if we're capturing too fast
+      if (timeSinceLastFrame < targetInterval * 0.8) {
+        return;
+      }
+
+      lastFrameTimeRef.current = now;
+
       const video = videoRef.current;
       const canvas = canvasRef.current;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
-      canvas.width = video.videoWidth || 320;
-      canvas.height = video.videoHeight || 240;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      // Set canvas size to match video (optimized)
+      const width = video.videoWidth || 640;
+      const height = video.videoHeight || 480;
 
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+      }
+
+      ctx.drawImage(video, 0, 0, width, height);
+
+      // Convert to blob with optimized quality/compression ratio
       canvas.toBlob(
         (blob) => {
           if (blob && isMountedRef.current) {
             blob.arrayBuffer().then((buffer) => {
-              sendMessage("webcam_frame", {
-                data: Array.from(new Uint8Array(buffer)).join(","),
-                size: buffer.byteLength,
-                format: "jpeg",
-              });
+              sendBinaryFrame(buffer);
             });
           }
         },
         "image/jpeg",
-        0.8
+        0.7 // Balanced quality vs size
       );
     };
 
     if (streamingIntervalRef.current) {
       clearInterval(streamingIntervalRef.current);
     }
+
+    // Use high-frequency interval for smooth streaming
     streamingIntervalRef.current = window.setInterval(
       captureFrame,
-      1000 / frameRate
+      Math.max(16, 1000 / frameRate) // Minimum 16ms (60fps max)
     );
-  }, [frameRate, sendMessage]);
+  }, [frameRate, sendBinaryFrame]);
 
   const stopStreaming = useCallback(() => {
     if (streamingIntervalRef.current) {
@@ -474,7 +518,7 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
     isInitializingRef.current = false;
   }, [stopCamera]);
 
-  // Auto-initialize on mount - only run once
+  // Auto-initialize on mount
   useEffect(() => {
     isMountedRef.current = true;
     initializeConnection();
@@ -483,20 +527,20 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
       isMountedRef.current = false;
       disconnect();
     };
-  }, []); // Empty dependency array - only run once on mount
+  }, []);
 
-  // Handle autoStartCamera separately to avoid re-initialization
+  // Handle autoStartCamera
   useEffect(() => {
     if (
       autoStartCamera &&
       status === "connected" &&
       cameraStatus === "inactive"
     ) {
-      setTimeout(() => startCamera(), 500); // Small delay to ensure connection is stable
+      setTimeout(() => startCamera(), 500);
     }
   }, [autoStartCamera, status, cameraStatus, startCamera]);
 
-  // Send heartbeat when connected
+  // Optimized heartbeat (less frequent)
   useEffect(() => {
     if (status !== "connected") {
       if (heartbeatIntervalRef.current) {
@@ -509,7 +553,7 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
     if (!heartbeatIntervalRef.current) {
       heartbeatIntervalRef.current = window.setInterval(() => {
         sendMessage("heartbeat", { timestamp: new Date().toISOString() });
-      }, 30000);
+      }, 60000); // Reduced frequency to 1 minute
     }
 
     return () => {
@@ -521,7 +565,7 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
   }, [status, sendMessage]);
 
   return (
-    <div style={{ padding: "20px", maxWidth: "600px" }}>
+    <div style={{ padding: "20px", maxWidth: "800px" }}>
       <h2>SkySentry Client: {clientId}</h2>
 
       <div style={{ marginBottom: "20px" }}>
@@ -547,6 +591,9 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
           >
             {cameraStatus}
           </strong>
+        </p>
+        <p>
+          Frame Rate: <strong>{frameRate} FPS</strong>
         </p>
       </div>
 
@@ -593,8 +640,8 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
         <video
           ref={videoRef}
           style={{
-            width: "320px",
-            height: "240px",
+            width: "640px",
+            height: "480px",
             border: "1px solid #ccc",
             backgroundColor: "#000",
             display: cameraStatus === "inactive" ? "none" : "block",

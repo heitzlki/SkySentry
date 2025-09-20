@@ -1,30 +1,31 @@
-import "./App.css";
+import React from "react";
 import SkySentryClient from "./SkySentryClient";
 
+// Generate random 6-digit ID
+function generateClientId(): string {
+  const randomId = Math.floor(100000 + Math.random() * 900000);
+  return `demo-client-${randomId}`;
+}
+
 function App() {
-  // Generate a random 6-digit number for the client ID
-  const randomClientId = `demo-client-${Math.floor(
-    100000 + Math.random() * 900000
-  )}`;
+  // Generate a unique client ID on app load
+  const clientId = React.useMemo(() => generateClientId(), []);
 
   return (
-    <>
-      <div>
-        <h1>SkySentry Demo</h1>
-        <p>Clean blackbox WebRTC/WebSocket interface</p>
+    <div className="App">
+      <header className="App-header">
+        <h1>SkySentry Capture Client</h1>
+        <p>High-Performance Real-Time Streaming</p>
+      </header>
 
-        {/* Simple usage - just pass a client ID */}
+      <main>
         <SkySentryClient
-          clientId={randomClientId}
+          clientId={clientId}
           autoStartCamera={true}
-          frameRate={50}
+          frameRate={20} // Optimized for smooth streaming
         />
-
-        {/* You can easily add more clients */}
-        <hr style={{ margin: "40px 0" }} />
-        {/* <SkySentryClient clientId="demo-client-002" /> */}
-      </div>
-    </>
+      </main>
+    </div>
   );
 }
 
