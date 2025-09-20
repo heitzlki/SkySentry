@@ -15,11 +15,16 @@ if len(cli_id) < 1:
     quit()
 
 frame = get_frame(cli_id[0])
-print(frame)
+# Convert PIL image to numpy array and BGR format for OpenCV
+grab = np.array(frame)
+if grab.shape[-1] == 3:  # RGB to BGR
+    frame_np = cv2.cvtColor(grab, cv2.COLOR_RGB2BGR)
+else:
+    frame_np = grab
+#print(frame_np)
 
-
-json_list, vis = rt.process_frame(frame, return_vis=True)
-
+json_list, vis = rt.process_frame(frame_np, return_vis=True)
+print(json_list)
 quit()
 
 
