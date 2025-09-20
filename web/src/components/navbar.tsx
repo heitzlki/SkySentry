@@ -19,7 +19,7 @@ import { LayoutDashboard } from '@/components/animate-ui/icons/layout-dashboard'
 import { ChartColumn } from '@/components/animate-ui/icons/chart-column';
 import { Layers } from '@/components/animate-ui/icons/layers';
 import { Cctv } from '@/components/animate-ui/icons/cctv';
-import { SunMoon } from '@/components/animate-ui/icons/sun-moon';
+import { Binary } from '@/components/animate-ui/icons/binary';
 import { AnimateIcon } from '@/components/animate-ui/icons/icon';
 
 export type IconProps = React.HTMLAttributes<SVGElement>;
@@ -55,8 +55,28 @@ export function Navbar() {
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Link
-                      href='/analytics'
-                      aria-label='Analytics'
+                      href='/logs'
+                      aria-label='Logs'
+                      className={cn(
+                        buttonVariants({ variant: 'ghost', size: 'icon' }),
+                        'size-12 rounded-full'
+                      )}>
+                      <Binary />
+                    </Link>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Logs</p>
+                  </TooltipContent>
+                </Tooltip>
+              </DockIcon>
+            </AnimateIcon>
+            <AnimateIcon animateOnHover>
+              <DockIcon>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Link
+                      href='/stats'
+                      aria-label='Stats'
                       className={cn(
                         buttonVariants({ variant: 'ghost', size: 'icon' }),
                         'size-12 rounded-full'
@@ -65,7 +85,7 @@ export function Navbar() {
                     </Link>
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p>Analytics</p>
+                    <p>Stats</p>
                   </TooltipContent>
                 </Tooltip>
               </DockIcon>
@@ -75,8 +95,8 @@ export function Navbar() {
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Link
-                      href='/layers'
-                      aria-label='Layers'
+                      href='/map'
+                      aria-label='Map'
                       className={cn(
                         buttonVariants({ variant: 'ghost', size: 'icon' }),
                         'size-12 rounded-full'
@@ -85,7 +105,7 @@ export function Navbar() {
                     </Link>
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p>Layers</p>
+                    <p>Map</p>
                   </TooltipContent>
                 </Tooltip>
               </DockIcon>
@@ -95,8 +115,8 @@ export function Navbar() {
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Link
-                      href='/surveillance'
-                      aria-label='Surveillance'
+                      href='/stream'
+                      aria-label='Stream'
                       className={cn(
                         buttonVariants({ variant: 'ghost', size: 'icon' }),
                         'size-12 rounded-full'
@@ -105,7 +125,7 @@ export function Navbar() {
                     </Link>
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p>Surveillance</p>
+                    <p>Stream</p>
                   </TooltipContent>
                 </Tooltip>
               </DockIcon>

@@ -1,0 +1,27 @@
+{
+  "totalObjectsDetected": 1847,
+  "riskLevels": {
+    "low": 1250,
+    "medium": 420,
+    "high": 177
+  },
+  "accuracy": 94.7,
+  "trends": {
+    "objectsDetected": {
+      "percentage": 15.3,
+      "direction": "up",
+      "period": "this week"
+    },
+    "riskDistribution": {
+      "percentage": 8.2,
+      "direction": "up",
+      "period": "this month"
+    },
+    "accuracy": {
+      "percentage": 2.1,
+      "direction": "up",
+      "period": "this month"
+    }
+  },
+  "lastUpdated": "2025-09-20T14:30:00Z"
+}
