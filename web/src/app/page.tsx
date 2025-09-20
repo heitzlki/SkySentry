@@ -1,4 +1,5 @@
 import Image from 'next/image';
+import { SunMoon } from '@/components/animate-ui/icons/sun-moon';
 
 export default function Home() {
   return (
