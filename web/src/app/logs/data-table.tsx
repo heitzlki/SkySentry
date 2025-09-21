@@ -49,6 +49,7 @@ import {
 } from '@tabler/icons-react';
 import { EllipsisVertical } from '@/components/animate-ui/icons/ellipsis-vertical';
 import { AnimateIcon } from '@/components/animate-ui/icons/icon';
+import { generateObjectColors, getUniqueGlobalIds } from '@/lib/object-colors';
 
 // Define the detection schema based on your data structure
 export const detectionSchema = z.object({
@@ -343,31 +344,55 @@ export function ObjectDetectionDataTable({
   );
   const [sorting, setSorting] = React.useState<SortingState>([]);
 
-  // Group the raw detection data
+  // Group the raw detection data and generate object colors
   const groupedData = React.useMemo(() => groupDetections(rawData), [rawData]);
+  const objectColors = React.useMemo(() => {
+    const uniqueIds = getUniqueGlobalIds(rawData);
+    return generateObjectColors(uniqueIds);
+  }, [rawData]);
 
   const columns: ColumnDef<GroupedDetection>[] = [
     {
       accessorKey: 'global_id',
       header: 'ID',
       size: 80,
-      cell: ({ row }) => (
-        <div className='font-mono text-sm font-semibold text-center'>
-          #{row.original.global_id}
-        </div>
-      ),
+      cell: ({ row }) => {
+        const color = objectColors.get(row.original.global_id) || 'rgb(107, 114, 128)';
+        return (
+          <div className='flex items-center justify-center gap-2'>
+            <div
+              className='w-3 h-3 rounded-full border border-border flex-shrink-0'
+              style={{ backgroundColor: color }}
+            />
+            <div className='font-mono text-sm font-semibold'>
+              #{row.original.global_id}
+            </div>
+          </div>
+        );
+      },
     },
     {
       accessorKey: 'label',
       header: 'Object Type',
       size: 180,
-      cell: ({ row }) => (
-        <div className='flex items-center gap-2'>
-          <Badge variant='outline' className='text font-medium p-1'>
-            {row.original.label}
-          </Badge>
-        </div>
-      ),
+      cell: ({ row }) => {
+        const color = objectColors.get(row.original.global_id) || 'rgb(107, 114, 128)';
+        return (
+          <div className='flex items-center gap-2'>
+            <Badge 
+              variant='outline' 
+              className='text font-medium p-1 border-2'
+              style={{ 
+                borderColor: color,
+                backgroundColor: `${color}15`, // 15% opacity
+                color: color
+              }}
+            >
+              {row.original.label}
+            </Badge>
+          </div>
+        );
+      },
     },
     {
       accessorKey: 'status',

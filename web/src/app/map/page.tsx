@@ -457,7 +457,7 @@ export default function Map() {
           <CardHeader className='items-center'>
             <CardTitle className='text-lg text-center justify-center items-center flex flex-col'>
               Analytics
-              <Status status='online' className='mt-2'>
+              <Status status='safe' className='mt-2'>
                 <StatusIndicator />
                 <StatusLabel />
               </Status>
