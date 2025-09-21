@@ -20,8 +20,9 @@ function App() {
 
       <main>
         <SkySentryClient
-          clientId={clientId}
-          autoStartCamera={false} // Disabled by default - let users choose camera first
+          // clientId={clientId}
+          clientId={"demo"}
+          // autoStartCamera={false} // Disabled by default - let users choose camera first
           frameRate={20} // Optimized for smooth streaming
         />
       </main>

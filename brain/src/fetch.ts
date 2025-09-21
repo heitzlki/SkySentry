@@ -1,6 +1,6 @@
-import { CameraDataSchema, CameraData, CameraDataFetcher } from './types';
-import { detectionService } from './db/detection-service';
-import exampleResponse from '../example-response.json';
+import { CameraDataSchema, CameraData, CameraDataFetcher } from "./types";
+import { detectionService } from "./db/detection-service";
+import exampleResponse from "../example-response.json";
 
 let i = 0;
 
@@ -10,6 +10,8 @@ class DevCameraDataFetcher implements CameraDataFetcher {
       setTimeout(resolve, Math.random() * 100 + 50)
     );
 
+    // We now only have one camera, so we can simplify this.
+    // The cameraId is now hardcoded to "camera-001" in dev_fetch.
     const singleObject = [exampleResponse[i]];
     i++;
     if (i >= exampleResponse.length) i = 0;
@@ -19,9 +21,6 @@ class DevCameraDataFetcher implements CameraDataFetcher {
     // Store the data in the database
     try {
       await detectionService.storeDetectionData(cameraId, validatedData);
-      console.log(
-        `✓ Stored ${validatedData.length} detection objects for camera ${cameraId}`
-      );
     } catch (error) {
       console.error(
         `Failed to store detection data for camera ${cameraId}:`,
@@ -45,9 +44,6 @@ class ProdCameraDataFetcher implements CameraDataFetcher {
     // Store the data in the database
     try {
       await detectionService.storeDetectionData(cameraId, validatedData);
-      console.log(
-        `✓ Stored ${validatedData.length} detection objects for camera ${cameraId}`
-      );
     } catch (error) {
       console.error(
         `Failed to store detection data for camera ${cameraId}:`,
@@ -62,7 +58,9 @@ class ProdCameraDataFetcher implements CameraDataFetcher {
 const devFetcher = new DevCameraDataFetcher();
 const prodFetcher = new ProdCameraDataFetcher();
 
-export async function dev_fetch(cameraId: string): Promise<CameraData> {
+export async function dev_fetch(
+  cameraId: string = "camera-001"
+): Promise<CameraData> {
   return devFetcher.fetch(cameraId);
 }
 

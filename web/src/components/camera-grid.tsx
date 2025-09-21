@@ -86,7 +86,7 @@ export function CameraGrid() {
   const cameraEntries = Object.entries(cameras);
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-4">
+    <div className="grid grid-cols-1 p-4">
       {cameraEntries.length === 0 ? (
         <div className="col-span-full text-center text-muted-foreground">
           No cameras connected. Waiting for streams...
@@ -103,7 +103,7 @@ export function CameraGrid() {
                 {data.fps.toFixed(1)} FPS | {Math.round(data.size / 1024)}KB
               </span>
             </div>
-            <div className="relative aspect-video bg-black">
+            <div className="relative  bg-black">
               <canvas
                 ref={(el) => {
                   if (el) canvasRefs.current.set(clientId, el);

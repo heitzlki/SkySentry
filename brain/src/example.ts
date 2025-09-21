@@ -1,11 +1,11 @@
 import { dev_fetch, CameraData } from "./index";
 
 async function exampleUsage() {
-  const camera1_data = await dev_fetch("camera-001");
-  const cameras: CameraData[] = [camera1_data];
+  const camera_data = await dev_fetch();
+  const cameras: CameraData[] = [camera_data];
 
   console.log(`Loaded ${cameras.length} camera data sets`);
-  console.log(`Camera 1 has ${camera1_data.length} data points`);
+  console.log(`Camera 1 has ${camera_data.length} data points`);
 
   return cameras;
 }

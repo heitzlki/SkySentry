@@ -1,6 +1,6 @@
-import { db, detectionObjects } from './database';
-import { DetectionObject, SimpleZwObject, CameraDataObject } from '../types';
-import { eq, desc } from 'drizzle-orm';
+import { db, detectionObjects } from "./database";
+import { DetectionObject, SimpleZwObject, CameraDataObject } from "../types";
+import { eq, desc } from "drizzle-orm";
 
 export class DetectionDataService {
   async storeDetectionData(
@@ -11,7 +11,7 @@ export class DetectionDataService {
 
     for (const item of data) {
       // Only store DetectionObjects, skip SimpleZwObjects
-      if ('Zw' in item && Object.keys(item).length === 1) {
+      if ("Zw" in item && Object.keys(item).length === 1) {
         // This is a SimpleZwObject, skip it
         continue;
       }
@@ -49,29 +49,17 @@ export class DetectionDataService {
       .limit(limit);
   }
 
-  async getAllDetections(cameraId?: string) {
-    if (cameraId) {
-      return await db
-        .select()
-        .from(detectionObjects)
-        .where(eq(detectionObjects.cameraId, cameraId))
-        .orderBy(desc(detectionObjects.timestamp));
-    }
-
+  async getAllDetections() {
     return await db
       .select()
       .from(detectionObjects)
       .orderBy(desc(detectionObjects.timestamp));
   }
 
-  async getDetectionCount(cameraId?: string): Promise<number> {
-    const result = cameraId
-      ? await db
-          .select({ count: detectionObjects.id })
-          .from(detectionObjects)
-          .where(eq(detectionObjects.cameraId, cameraId))
-      : await db.select({ count: detectionObjects.id }).from(detectionObjects);
-
+  async getDetectionCount(): Promise<number> {
+    const result = await db
+      .select({ count: detectionObjects.id })
+      .from(detectionObjects);
     return result.length;
   }
 }

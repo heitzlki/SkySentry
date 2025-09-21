@@ -15,7 +15,7 @@ export const DetectionObjectSchema = z.object({
   Zc: z.number().optional(),
   Xw: z.number().optional(),
   Yw: z.number().optional(),
-  Zw: z.number(),
+  Zw: z.number().optional(),
 });
 
 export const SimpleZwObjectSchema = z.object({

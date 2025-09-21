@@ -1,10 +1,8 @@
 import { treaty } from "@elysiajs/eden";
-import type { API } from "../../../stream/api";
+import type { App } from "../../../brain/src/index";
 
 // Create the Eden client
-export const api = treaty<API>(
-  process.env.NEXT_PUBLIC_API_URL || "https://demo3001.shivi.io"
-);
+export const client = treaty<App>("http://localhost:4000");
 
 // Types for the camera data
 export interface CameraData {

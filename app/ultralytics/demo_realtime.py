@@ -20,6 +20,17 @@ PANEL_MATCH_H         = True
 FONT = cv2.FONT_HERSHEY_SIMPLEX
 WIN  = "YOLOE • Live | Top-down (fading)"
 
+# Global YoloeRealtime instance to maintain tracking state across API calls
+_global_rt = None
+
+def get_global_rt():
+    """Get or create the global YoloeRealtime instance."""
+    global _global_rt
+    if _global_rt is None:
+        print("[DEBUG] Creating global YoloeRealtime instance")
+        _global_rt = YoloeRealtime(weights="yoloe-11s-seg.pt", device=0)
+    return _global_rt
+
 def color_for_id(gid: int):
     return (
         60 + (37 * (gid + 1)) % 195,
@@ -132,15 +143,16 @@ def get_res_for_id(client_id):
         
         print(f"[DEBUG] Frame shape: {frame_np.shape} for client {client_id}")
         
-        # Initialize YOLOE processor
-        print(f"[DEBUG] Initializing YOLOE processor for client {client_id}")
-        rt = YoloeRealtime(weights="yoloe-11s-seg.pt", device=0)  # Use GPU if available, set to None for CPU
+        # Use the global YOLOE processor instance to maintain tracking state
+        print(f"[DEBUG] Using global YOLOE processor for client {client_id}")
+        rt = get_global_rt()
         
         # Process the frame
         print(f"[DEBUG] Running YOLO detection on frame for client {client_id}")
         json_list, _ = rt.process_frame(frame_np, return_vis=False)
         
         print(f"[DEBUG] YOLO processing complete for client {client_id}, detections: {len(json_list)}")
+        print(f"[DEBUG] Current frame index: {rt.frame_idx}")
         for i, det in enumerate(json_list):
             print(f"[DEBUG] Detection {i}: {det}")
         
