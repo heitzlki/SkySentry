@@ -10,18 +10,18 @@ from ultralytics import YOLOE
 
 # ---------------- Defaults / Config Structs ----------------
 DEFAULT_CLASSES = [
-    "white bottle", "paper sign in hand", "paper air plane",
-    "black bottle", "paper airplane in hand"
+ "paper sign in hand",
+    "person"
 ]
 
 DEFAULT_CONTINUITY_GROUPS = [
-    {"paper air plane", "paper airplane in hand"},
-    {"white bottle", "black bottle"}
+    {"paper air plane", "paper airplane in hand", "paper sign in hand"},
+   
 ]
 
 DEFAULT_OBJ_HEIGHTS_M = {
-    "white bottle": 0.15,
-    "black bottle": 0.20,
+    "person": 1.7,
+    "black bottle": 0.30,
     "paper sign in hand": 0.20,
     "paper air plane": 0.15,
     "paper airplane in hand": 0.15
@@ -170,6 +170,25 @@ class IdentityManager:
             "last_frame": frame_idx
         }
         return best_gid
+    
+
+    def _match_pool(self, det, pool, frame_idx):
+        ci = det["cls_idx"]; dc = det["center"]
+        best_gid, best_dist, best_pos = None, float("inf"), -1
+        for idx, item in enumerate(pool):
+            age = frame_idx - item["last_frame"]
+            if age < 0 or age > self.reid_max_frames:
+                continue
+            if not self._same_continuity_class(item["cls"], ci):
+                continue
+            dist = _center_dist(dc, item["center"])
+            if dist <= self.reid_max_radius_px and dist < best_dist:
+                best_gid, best_dist, best_pos = item["gid"], dist, idx
+        # IMPORTANT: no side effects here
+        if best_gid is None:
+            return None
+        return best_gid, best_pos
+
 
     def assign(self, frame_idx: int, dets: List[Dict[str, Any]]) -> Dict[int, int]:
         used_gids = set(); idx_to_gid: Dict[int, int] = {}
@@ -201,6 +220,58 @@ class IdentityManager:
                 self.inactive.append({"gid": gid, **rec})
         self.inactive = [it for it in self.inactive if (frame_idx - it["last_frame"]) <= self.reid_max_frames]
         return idx_to_gid
+    
+    def assign(self, frame_idx: int, dets: List[Dict[str, Any]]) -> Dict[int, int]:
+        used_gids = set(); idx_to_gid: Dict[int, int] = {}
+
+        # Build shared pools ONCE
+        active_pool = [{"gid": gid, **rec} for gid, rec in self.active.items()]  # shared
+        inactive_pool = self.inactive  # already shared list
+
+        # Try ACTIVE first (no side effects until we accept)
+        for i, det in enumerate(dets):
+            m = self._match_pool(det, pool=active_pool, frame_idx=frame_idx)
+            if m is None:
+                continue
+            gid, pos = m
+            if gid in used_gids:
+                continue  # don't accept; crucially, no mutation has happened
+            # accept: remove from active_pool, update self.active
+            item = active_pool.pop(pos)
+            self.active[gid] = {"cls": item["cls"], "bbox": det["bbox"], "center": det["center"], "last_frame": frame_idx}
+            used_gids.add(gid); idx_to_gid[i] = gid
+
+        # Then INACTIVE (again, no side effects until we accept)
+        for i, det in enumerate(dets):
+            if i in idx_to_gid: 
+                continue
+            m = self._match_pool(det, pool=inactive_pool, frame_idx=frame_idx)
+            if m is None:
+                continue
+            gid, pos = m
+            if gid in used_gids:
+                continue
+            # accept: remove from INACTIVE and activate it
+            item = inactive_pool.pop(pos)
+            self.active[gid] = {"cls": item["cls"], "bbox": det["bbox"], "center": det["center"], "last_frame": frame_idx}
+            used_gids.add(gid); idx_to_gid[i] = gid
+
+        # New IDs
+        for i, det in enumerate(dets):
+            if i in idx_to_gid: 
+                continue
+            gid = self._new_gid(det["cls_idx"], det["bbox"], det["center"], frame_idx)
+            used_gids.add(gid); idx_to_gid[i] = gid
+
+        # Move unmatched actives to inactive and prune stale
+        matched_gids = set(idx_to_gid.values())
+        for gid in list(self.active.keys()):
+            if gid not in matched_gids:
+                rec = self.active.pop(gid)
+                self.inactive.append({"gid": gid, **rec})
+        self.inactive = [it for it in self.inactive if (frame_idx - it["last_frame"]) <= self.reid_max_frames]
+        return idx_to_gid
+
 
 # ---------------- Public Module Class ----------------
 class YoloeRealtime:
@@ -290,7 +361,7 @@ class YoloeRealtime:
 
         # Build JSON + (optional) visualization
         json_list: List[Dict[str, Any]] = []
-        vis = frame_bgr.copy() if return_vis else None
+        overlay = frame_bgr.copy() if return_vis else None  # <— build overlay first
 
         for i, det in enumerate(dets):
             gid = idx_to_gid[i]
@@ -299,8 +370,8 @@ class YoloeRealtime:
             coords = {}
             if (self.fx is not None) and (self.fy is not None):
                 coords = _estimate_3d_for_bbox(det["bbox"], det["label"], 
-                                               self.fx, self.fy, self.cx, self.cy,
-                                               self.R_wc, self.cam_pos_w, self.obj_heights_m)
+                                            self.fx, self.fy, self.cx, self.cy,
+                                            self.R_wc, self.cam_pos_w, self.obj_heights_m)
 
             obj = {
                 "frame": int(self.frame_idx),
@@ -318,18 +389,35 @@ class YoloeRealtime:
             json_list.append(obj)
 
             if return_vis:
-                col = (60 + (37 * (gid + 1)) % 195, 60 + (91 * (gid + 1)) % 195, 60 + (13 * (gid + 1)) % 195)
-                # mask overlay
+                col = (
+                    60 + (37 * (gid + 1)) % 195,
+                    60 + (91 * (gid + 1)) % 195,
+                    60 + (13 * (gid + 1)) % 195
+                )
                 m = det.get("mask", None)
-                if m is not None and m.shape == (H, W):
-                    vis[m] = col
-                # bbox, label, center
+                if m is not None and m.shape == frame_bgr.shape[:2]:
+                    overlay[m] = col  # paint onto overlay only
+
+        # After mask painting, blend once, then draw crisp boxes/labels
+        vis = None
+        if return_vis:
+            vis = cv2.addWeighted(overlay, 0.35, frame_bgr, 0.65, 0.0)
+
+            for i, det in enumerate(dets):
+                gid = idx_to_gid[i]
+                (x1,y1,x2,y2) = det["bbox"]; (cx_px,cy_px) = det["center"]
+                col = (
+                    60 + (37 * (gid + 1)) % 195,
+                    60 + (91 * (gid + 1)) % 195,
+                    60 + (13 * (gid + 1)) % 195
+                )
                 cv2.rectangle(vis, (x1,y1), (x2,y2), col, 2)
                 tag = f"{det['label']}  id:{gid}"
                 ytxt = max(12, y1 - 6)
                 cv2.putText(vis, tag, (x1, ytxt), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (20,20,20), 2, cv2.LINE_AA)
                 cv2.putText(vis, tag, (x1, ytxt), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1, cv2.LINE_AA)
                 cv2.circle(vis, (int(cx_px), int(cy_px)), 3, (255,255,255), -1)
+
 
         self.frame_idx += 1
         return json_list, vis

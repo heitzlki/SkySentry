@@ -1,9 +1,3 @@
-# viz_from_csv.py
-# Visualize tracked objects from CSV side-by-side with video:
-# [Video frame] | [3D world view] | [2D top-down map]
-#
-# Requirements: pip install opencv-python pandas numpy
-
 import cv2
 import math
 import numpy as np
@@ -11,29 +5,53 @@ import pandas as pd
 from pathlib import Path
 from collections import defaultdict, deque
 
+"""
+Visualize tracked objects from CSV side-by-side with video:
+[Video frame] | [2D top-down map]
+
+Major changes vs. your previous script:
+- Removed the 3D panel entirely — only video + top‑down map are rendered.
+- Guaranteed cleanup of "old" trajectories:
+    * Trails are drawn only for currently visible objects (ACTIVE_ONLY=True),
+      and we also prune any trail whose object hasn’t appeared within STALE_TTL frames.
+- Same greyed-out raw trails + colored smoothed (rolling-mean) line per object.
+- Light refactor + comments for clarity.
+
+Requirements: pip install opencv-python pandas numpy
+"""
+
 # ---------------- Config ----------------
-VIDEO_PATH = "test_videos/test_video12.mp4"
+VIDEO_PATH = "test_videos/test_video21.mp4"
 CSV_PATH   = "out_yoloe_prompt_track_persist_v2/detections.csv"
-OUT_PATH   = "out_yoloe_prompt_track_persist_v2/viz_side_by_side.mp4"
+OUT_PATH   = "out_yoloe_prompt_track_persist_v2/viz_video_topdown.mp4"
 
 SHOW_WINDOW     = True
 WRITE_VIDEO     = True
-TRAIL_LEN       = 60      # points in trail
+TRAIL_LEN       = 60       # number of points kept per trail (world coords)
+MEAN_WIN        = 10       # rolling average window for the smoothed line
+ACTIVE_ONLY     = True     # draw trails only for objects detected in the current frame
+STALE_TTL       = 30       # frames; prune trails if object absent for > this many frames
+
+# Drawing
 FONT            = cv2.FONT_HERSHEY_SIMPLEX
+TRAIL_THICK     = 1
+MEAN_THICK      = 3
+POINT_RADIUS    = 6
 
-# 3D view (virtual camera) — just for visualization
-VIEW_AZIM_DEG   = 35.0    # yaw around Z (turntable)
-VIEW_ELEV_DEG   = 25.0    # pitch around X
-VIEW_DIST       = 8.0     # perspective distance scalar (bigger = weaker perspective)
+# Colors (BGR)
+BG_COLOR        = (18, 18, 18)
+GRID_COLOR      = (30, 30, 30)
+HEADER_BG       = (0, 0, 0)
+HEADER_FG       = (255, 255, 255)
+LABEL_SHADOW    = (10, 10, 10)
+LABEL_FG        = (255, 255, 255)
+TRAIL_GREY      = (160, 160, 160)  # greyed-out trail color
 
-# 2D map padding (pixels around min/max extents)
-MAP_PAD         = 0.5     # meters of margin
-
+# 2D map padding (meters around min/max extents)
+MAP_PAD         = 0.5
 
 DISPLAY_SCALE   = 0.6
-# Panel sizes (the 3D & map panels will be square with height = video height)
-# Final composite is [video | 3D | map]
-# -------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 def color_for_id(gid: int):
     return (
@@ -41,6 +59,8 @@ def color_for_id(gid: int):
         60 + (91 * (gid + 1)) % 195,
         60 + (13 * (gid + 1)) % 195,
     )
+
+# ---------------- Data loading ----------------
 
 def load_tracks(csv_path: str):
     df = pd.read_csv(csv_path)
@@ -53,7 +73,7 @@ def load_tracks(csv_path: str):
     # Coerce numeric
     for c in ["frame","global_id","Xw","Yw","Zw"]:
         df[c] = pd.to_numeric(df[c], errors="coerce")
-    df = df.dropna(subset=["frame","global_id","Xw","Yw","Zw"])
+    df = df.dropna(subset=["frame","global_id","Xw","Yw","Zw"])  # keep only rows with world coords
 
     # Build per-frame list of detections
     frames = defaultdict(list)
@@ -78,90 +98,35 @@ def load_tracks(csv_path: str):
     }
     return frames, bounds
 
-def rot_x(deg):
-    t = math.radians(deg); c, s = math.cos(t), math.sin(t)
-    return np.array([[1,0,0],[0,c,-s],[0,s,c]], dtype=np.float32)
+# ---------------- Helpers ----------------
 
-def rot_z(deg):
-    t = math.radians(deg); c, s = math.cos(t), math.sin(t)
-    return np.array([[c,-s,0],[s,c,0],[0,0,1]], dtype=np.float32)
-
-def project_3d_points(points_xyz, panel_w, panel_h, bounds, azim=35, elev=25, dist=8.0):
+def rolling_mean(points, win):
+    """Compute rolling-average polyline.
+    points: list of tuples (x,y[,z]) in world coords.
+    Returns a list of same-dimension tuples of smoothed points.
     """
-    Simple 3D renderer: rotate world -> view, then perspective project and scale to panel.
-    points_xyz: list of (X,Y,Z) tuples
-    Returns list of (u,v) ints in pixels.
-    """
-    if not points_xyz:
+    if not points:
         return []
 
-    # Normalize world to a centered cube for stable view scaling
-    xmin, xmax = bounds["xmin"], bounds["xmax"]
-    ymin, ymax = bounds["ymin"], bounds["ymax"]
-    zmin, zmax = bounds["zmin"], bounds["zmax"]
+    pts = np.array(points, dtype=np.float32)  # shape (N, D)
+    N, D = pts.shape
+    out = []
+    for i in range(N):
+        k = min(win, i + 1)
+        seg = pts[i - k + 1:i + 1]
+        m = seg.mean(axis=0)
+        out.append(tuple(m.tolist()))
+    return out
 
-    cx = 0.5*(xmin+xmax); sx = max(1e-6, (xmax - xmin))
-    cy = 0.5*(ymin+ymax); sy = max(1e-6, (ymax - ymin))
-    cz = 0.5*(zmin+zmax); sz = max(1e-6, (zmax - zmin))
-    s  = max(sx, sy, sz)  # uniform scale
+# ---------------- Rendering ----------------
 
-    P = np.array([[ (x-cx)/s, (y-cy)/s, (z-cz)/s ] for (x,y,z) in points_xyz], dtype=np.float32).T  # (3,N)
-
-    # View rotation (Z then X)
-    R = rot_x(elev) @ rot_z(azim)
-    Pv = R @ P  # (3,N)
-
-    # Perspective (very simple)
-    z = Pv[2,:] + dist
-    z = np.where(z < 1e-3, 1e-3, z)
-    x = (Pv[0,:] / z)
-    y = (Pv[1,:] / z)
-
-    # Scale to panel
-    # make [-0.6,0.6] → margins; tweak factor for comfortable fit
-    scale = 0.85 * min(panel_w, panel_h) / 2.0
-    u = (panel_w/2.0 + scale * x).astype(int)
-    v = (panel_h/2.0 - scale * y).astype(int)
-    return list(zip(u, v))
-
-def render_3d_panel(panel_size, objects, trails, bounds):
-    """Draw 3D world view with trails and labels."""
+def render_topdown_panel(panel_size, objects, trails, bounds, active_gids):
+    """Draw top-down X-Y map with grey trails and colored mean lines + labels (Z ignored).
+    - If ACTIVE_ONLY is True, only draw trails for active_gids (present in this frame).
+    - Otherwise, draw trails for any gid present in trails dict.
+    """
     H = W = panel_size
-    img = np.full((H, W, 3), 18, np.uint8)
-
-    # draw grid (optional)
-    for t in np.linspace(-0.5, 0.5, 5):
-        cv2.line(img, (int(W*(t+0.5)), 0), (int(W*(t+0.5)), H), (30,30,30), 1)
-        cv2.line(img, (0, int(H*(t+0.5))), (W, int(H*(t+0.5))), (30,30,30), 1)
-
-    # collect current points
-    pts = [(o["Xw"], o["Yw"], o["Zw"]) for o in objects]
-    uv = project_3d_points(pts, W, H, bounds, VIEW_AZIM_DEG, VIEW_ELEV_DEG, VIEW_DIST)
-
-    # draw trails first (project each trail polyline)
-    for gid, q in trails.items():
-        if len(q) < 2: continue
-        pts3 = list(q)
-        uvt = project_3d_points(pts3, W, H, bounds, VIEW_AZIM_DEG, VIEW_ELEV_DEG, VIEW_DIST)
-        col = color_for_id(gid)
-        for i in range(1, len(uvt)):
-            cv2.line(img, uvt[i-1], uvt[i], col, 2, cv2.LINE_AA)
-
-    # draw points + labels
-    for o, (u,v) in zip(objects, uv):
-        col = color_for_id(o["gid"])
-        cv2.circle(img, (u,v), 5, col, -1, cv2.LINE_AA)
-        label = f'{o["label"]} id:{o["gid"]}'
-        cv2.putText(img, label, (u+8, v-6), FONT, 0.5, (10,10,10), 2, cv2.LINE_AA)
-        cv2.putText(img, label, (u+8, v-6), FONT, 0.5, (255,255,255), 1, cv2.LINE_AA)
-
-    cv2.putText(img, "3D world view", (8, 22), FONT, 0.6, (220,220,220), 1, cv2.LINE_AA)
-    return img
-
-def render_topdown_panel(panel_size, objects, trails, bounds):
-    """Draw top-down X-Y map with trails and labels (Z ignored for map)."""
-    H = W = panel_size
-    img = np.full((H, W, 3), 18, np.uint8)
+    img = np.full((H, W, 3), BG_COLOR, np.uint8)
 
     # Extents with padding
     xmin, xmax = bounds["xmin"], bounds["xmax"]
@@ -179,29 +144,58 @@ def render_topdown_panel(panel_size, objects, trails, bounds):
     for t in np.linspace(0.0, 1.0, 5):
         xg = int(t*(W-1))
         yg = int(t*(H-1))
-        cv2.line(img, (xg, 0), (xg, H-1), (30,30,30), 1)
-        cv2.line(img, (0, yg), (W-1, yg), (30,30,30), 1)
+        cv2.line(img, (xg, 0), (xg, H-1), GRID_COLOR, 1)
+        cv2.line(img, (0, yg), (W-1, yg), GRID_COLOR, 1)
 
-    # trails
-    for gid, q in trails.items():
-        if len(q) < 2: continue
-        col = color_for_id(gid)
+    # Which gids to draw
+    gids_to_draw = set(active_gids) if ACTIVE_ONLY else set(trails.keys())
+
+    # trails (raw) — greyed out
+    for gid in sorted(gids_to_draw):
+        q = trails.get(gid)
+        if not q or len(q) < 2:
+            continue
         for i in range(1, len(q)):
             u1,v1 = world_to_px(q[i-1][0], q[i-1][1])
             u2,v2 = world_to_px(q[i][0],   q[i][1])
-            cv2.line(img, (u1,v1), (u2,v2), col, 2, cv2.LINE_AA)
+            cv2.line(img, (u1,v1), (u2,v2), TRAIL_GREY, TRAIL_THICK, cv2.LINE_AA)
 
-    # points + labels
+        # mean / smoothed line — in object color
+        mean_xy = [(p[0], p[1]) for p in rolling_mean(list(q), MEAN_WIN)]
+        if len(mean_xy) >= 2:
+            col = color_for_id(gid)
+            for i in range(1, len(mean_xy)):
+                u1,v1 = world_to_px(mean_xy[i-1][0], mean_xy[i-1][1])
+                u2,v2 = world_to_px(mean_xy[i][0],   mean_xy[i][1])
+                cv2.line(img, (u1,v1), (u2,v2), col, MEAN_THICK, cv2.LINE_AA)
+
+    # points + labels (colored) — only for current objects
     for o in objects:
         u,v = world_to_px(o["Xw"], o["Yw"])
         col = color_for_id(o["gid"])
-        cv2.circle(img, (u,v), 6, col, -1, cv2.LINE_AA)
+        cv2.circle(img, (u,v), POINT_RADIUS, col, -1, cv2.LINE_AA)
         label = f'{o["label"]} id:{o["gid"]}'
-        cv2.putText(img, label, (u+8, v-6), FONT, 0.5, (10,10,10), 2, cv2.LINE_AA)
-        cv2.putText(img, label, (u+8, v-6), FONT, 0.5, (255,255,255), 1, cv2.LINE_AA)
+        cv2.putText(img, label, (u+8, v-6), FONT, 0.5, LABEL_SHADOW, 2, cv2.LINE_AA)
+        cv2.putText(img, label, (u+8, v-6), FONT, 0.5, LABEL_FG, 1, cv2.LINE_AA)
 
     cv2.putText(img, "Top-down (X-Y)", (8, 22), FONT, 0.6, (220,220,220), 1, cv2.LINE_AA)
     return img
+
+# ---------------- Trail maintenance ----------------
+
+def prune_stale_trails(trails, last_seen, current_frame, ttl):
+    """Remove any gid whose last_seen is older than ttl frames ago.
+    Modifies trails and last_seen in place.
+    """
+    to_delete = []
+    for gid, f in last_seen.items():
+        if current_frame - f > ttl:
+            to_delete.append(gid)
+    for gid in to_delete:
+        trails.pop(gid, None)
+        last_seen.pop(gid, None)
+
+# ---------------- Main ----------------
 
 def main():
     # Load CSV → per-frame detections + bounds
@@ -216,12 +210,13 @@ def main():
     H = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 720)
     FPS = cap.get(cv2.CAP_PROP_FPS) or 30.0
 
-    PANEL = H  # make 3D & map square panels, same height as video
-    out_w = W + PANEL + PANEL
+    PANEL = H  # make map panel square, same height as video
+    out_w = W + PANEL
     out_h = H
 
     # Trails (world coords): gid -> deque[(Xw,Yw,Zw)]
     trails = defaultdict(lambda: deque(maxlen=TRAIL_LEN))
+    last_seen_frame = {}  # gid -> last frame index when observed
 
     writer = None
     if WRITE_VIDEO:
@@ -238,26 +233,30 @@ def main():
 
         # current objects for this frame
         objs = frames.get(frame_idx, [])
-        # update trails
+        active_gids = [o["gid"] for o in objs]
+
+        # update trails and last_seen
         for o in objs:
             trails[o["gid"]].append((o["Xw"], o["Yw"], o["Zw"]))
+            last_seen_frame[o["gid"]] = frame_idx
 
-        # render side panels
-        panel3d = render_3d_panel(PANEL, objs, trails, bounds)
-        panel2d = render_topdown_panel(PANEL, objs, trails, bounds)
+        # prune old trails (objects absent for > STALE_TTL frames)
+        prune_stale_trails(trails, last_seen_frame, frame_idx, STALE_TTL)
+
+        # render top-down panel
+        panel2d = render_topdown_panel(PANEL, objs, trails, bounds, active_gids)
 
         # compose
         canvas = np.zeros((out_h, out_w, 3), dtype=np.uint8)
         canvas[:, :W] = frame
-        canvas[:, W:W+PANEL] = panel3d
-        canvas[:, W+PANEL:W+2*PANEL] = panel2d
+        canvas[:, W:W+PANEL] = panel2d
 
-                # header strip
-        cv2.rectangle(canvas, (0,0), (out_w, 34), (0,0,0), -1)
-        cv2.putText(canvas, f"Frame {frame_idx}", (12, 22), FONT, 0.7, (255,255,255), 1, cv2.LINE_AA)
+        # header strip
+        cv2.rectangle(canvas, (0,0), (out_w, 34), HEADER_BG, -1)
+        cv2.putText(canvas, f"Frame {frame_idx}", (12, 22), FONT, 0.7, HEADER_FG, 1, cv2.LINE_AA)
 
         if SHOW_WINDOW:
-            # ---- NEW: shrink only the on-screen preview ----
+            # shrink only the on-screen preview
             if DISPLAY_SCALE != 1.0:
                 disp = cv2.resize(
                     canvas, None,
@@ -266,10 +265,9 @@ def main():
                 )
             else:
                 disp = canvas
-            cv2.imshow("Video | 3D | Top-down", disp)
+            cv2.imshow("Video | Top-down", disp)
             if cv2.waitKey(1) & 0xFF == 27:
                 break
-
 
         if writer is not None:
             writer.write(canvas)
@@ -279,6 +277,7 @@ def main():
         writer.release()
     cv2.destroyAllWindows()
     print("Done.", "Saved:", OUT_PATH if WRITE_VIDEO else "(no file)")
+
 
 if __name__ == "__main__":
     main()
