@@ -213,12 +213,12 @@ export function SectionCards() {
         <CardContent className='flex flex-1 items-center pb-1'>
           <ChartContainer
             config={chartConfig}
-            className='mx-auto aspect-square w-full max-w-[120px]'>
+            className='mx-auto aspect-square w-full max-w-[150px]'>
             <RadialBarChart
               data={chartData}
               endAngle={180}
-              innerRadius={30}
-              outerRadius={60}>
+              innerRadius={60}
+              outerRadius={90}>
               <ChartTooltip
                 cursor={false}
                 content={<ChartTooltipContent hideLabel />}
