@@ -20,6 +20,8 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
   >("inactive");
   const [fps, setFps] = useState(0);
   const [droppedFrames, setDroppedFrames] = useState(0);
+  const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string>("");
 
   const wsRef = useRef<WebSocket | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -62,14 +64,16 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
   const startCamera = useCallback(async () => {
     if (streamRef.current) return;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+      const constraints: MediaStreamConstraints = {
         video: {
+          deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined,
           width: { ideal: 640 },
           height: { ideal: 480 },
           frameRate: { ideal: frameRate },
         },
         audio: false,
-      });
+      };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       if (videoRef.current) videoRef.current.srcObject = stream;
       streamRef.current = stream;
       setCameraStatus("active");
@@ -77,7 +81,7 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
       console.error("Camera error:", error);
       setCameraStatus("error");
     }
-  }, [frameRate]);
+  }, [frameRate, selectedDeviceId]);
 
   const captureAndSendFrame = useCallback(() => {
     const now = performance.now();
@@ -163,6 +167,24 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
   };
 
   useEffect(() => {
+    const getCameras = async () => {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(
+          (device) => device.kind === "videoinput"
+        );
+        setCameras(videoDevices);
+        if (videoDevices.length > 0 && !selectedDeviceId) {
+          setSelectedDeviceId(videoDevices[0].deviceId);
+        }
+      } catch (error) {
+        console.error("Error enumerating devices:", error);
+      }
+    };
+    getCameras();
+  }, [selectedDeviceId]);
+
+  useEffect(() => {
     return () => disconnect(); // Cleanup on unmount
   }, []);
 
@@ -182,6 +204,21 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
             <strong>{droppedFrames}</strong>
           </p>
         )}
+        <div style={{ margin: "10px 0" }}>
+          <label htmlFor="camera-select">Select Camera: </label>
+          <select
+            id="camera-select"
+            value={selectedDeviceId}
+            onChange={(e) => setSelectedDeviceId(e.target.value)}
+            disabled={cameraStatus !== "inactive"}
+          >
+            {cameras.map((camera) => (
+              <option key={camera.deviceId} value={camera.deviceId}>
+                {camera.label || `Camera ${camera.deviceId.slice(0, 8)}`}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
       <div style={{ margin: "20px 0" }}>
         <button onClick={connect} disabled={status !== "disconnected"}>

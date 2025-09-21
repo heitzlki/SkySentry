@@ -291,6 +291,7 @@ const app = new Elysia()
           boundingBox: { x1: number; y1: number; x2: number; y2: number };
           global_id: number;
           isActive: boolean;
+          timestamp: string;
         }[] = [];
 
         for (const [groupId, groupDets] of buffer) {
@@ -312,7 +313,7 @@ const app = new Elysia()
           // Compute dx, dy from recent motion
           let dx = 0;
           let dy = 0;
-          if (groupDets.length > 1) {
+          if (groupDets.length > 0) {
             const numPoints = Math.min(5, groupDets.length - 1);
             let sumDx = 0;
             let sumDy = 0;
@@ -361,6 +362,7 @@ const app = new Elysia()
             boundingBox,
             global_id: groupId,
             isActive,
+            timestamp: new Date().toISOString(),
           });
         }
 

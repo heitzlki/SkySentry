@@ -10,10 +10,16 @@ interface CameraData {
   frameCount: number;
 }
 
-export function CameraGrid() {
+interface CameraGridProps {
+  aiProcessData?: any;
+  onFrameUpdate?: (clientId: string, data: any) => void;
+}
+
+export function CameraGrid({ aiProcessData, onFrameUpdate }: CameraGridProps) {
   const [cameras, setCameras] = useState<Record<string, CameraData>>({});
   const wsRef = useRef<WebSocket | null>(null);
   const canvasRefs = useRef(new Map<string, HTMLCanvasElement>());
+  const containerRefs = useRef(new Map<string, HTMLDivElement>());
   const imgRef = useRef(new Image());
   const currentClientIdRef = useRef<string | null>(null);
   const isLoadingRef = useRef(false);
@@ -24,19 +30,70 @@ export function CameraGrid() {
       const clientId = currentClientIdRef.current;
       if (clientId) {
         const canvas = canvasRefs.current.get(clientId);
-        if (canvas) {
+        const container = containerRefs.current.get(clientId);
+        if (canvas && container) {
           const ctx = canvas.getContext("2d");
           if (ctx) {
-            canvas.width = imgRef.current.naturalWidth;
-            canvas.height = imgRef.current.naturalHeight;
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.drawImage(imgRef.current, 0, 0);
+            const containerWidth = container.clientWidth;
+            const containerHeight = container.clientHeight;
+            canvas.width = containerWidth;
+            canvas.height = containerHeight;
+
+            const imgWidth = imgRef.current.naturalWidth;
+            const imgHeight = imgRef.current.naturalHeight;
+            const scaleX = containerWidth / imgWidth;
+            const scaleY = containerHeight / imgHeight;
+            const scale = Math.min(scaleX, scaleY);
+
+            const scaledWidth = imgWidth * scale;
+            const scaledHeight = imgHeight * scale;
+            const offsetX = (containerWidth - scaledWidth) / 2;
+            const offsetY = (containerHeight - scaledHeight) / 2;
+
+            ctx.clearRect(0, 0, containerWidth, containerHeight);
+            ctx.drawImage(
+              imgRef.current,
+              offsetX,
+              offsetY,
+              scaledWidth,
+              scaledHeight
+            );
+
+            // Draw bounding boxes if aiProcessData exists
+            if (aiProcessData && Array.isArray(aiProcessData)) {
+              ctx.strokeStyle = "red";
+              ctx.lineWidth = 2;
+              ctx.fillStyle = "red";
+              ctx.font = "16px Arial";
+
+              aiProcessData.forEach((detection: any) => {
+                const bbox = detection.boundingBox || detection;
+                if (
+                  bbox.x1 !== undefined &&
+                  bbox.y1 !== undefined &&
+                  bbox.x2 !== undefined &&
+                  bbox.y2 !== undefined
+                ) {
+                  const x1 = bbox.x1 * scale + offsetX;
+                  const y1 = bbox.y1 * scale + offsetY;
+                  const x2 = bbox.x2 * scale + offsetX;
+                  const y2 = bbox.y2 * scale + offsetY;
+                  const width = x2 - x1;
+                  const height = y2 - y1;
+
+                  ctx.strokeRect(x1, y1, width, height);
+                  if (detection.label) {
+                    ctx.fillText(detection.label, x1, y1 - 5);
+                  }
+                }
+              });
+            }
           }
         }
       }
       isLoadingRef.current = false;
     };
-  }, []);
+  }, [aiProcessData]);
 
   useEffect(() => {
     const connectWebSocket = () => {
@@ -72,6 +129,11 @@ export function CameraGrid() {
               isLoadingRef.current = true;
               imgRef.current.src = image;
             }
+
+            // Call onFrameUpdate if provided
+            if (onFrameUpdate) {
+              onFrameUpdate(clientId, data);
+            }
           }
         } catch (error) {
           console.error("Error parsing WebSocket message:", error);
@@ -95,7 +157,7 @@ export function CameraGrid() {
         wsRef.current.close();
       }
     };
-  }, []);
+  }, [onFrameUpdate]);
 
   const cameraEntries = Object.entries(cameras);
 
@@ -110,6 +172,9 @@ export function CameraGrid() {
           <div
             key={clientId}
             className="border rounded-lg overflow-hidden bg-card"
+            ref={(el) => {
+              if (el) containerRefs.current.set(clientId, el);
+            }}
           >
             <div className="p-2 bg-muted/50 flex justify-between items-center">
               <span className="font-medium text-sm">{clientId}</span>
@@ -117,7 +182,7 @@ export function CameraGrid() {
                 {data.fps.toFixed(1)} FPS | {Math.round(data.size / 1024)}KB
               </span>
             </div>
-            <div className="relative  bg-black">
+            <div className="relative bg-black" style={{ height: "400px" }}>
               <canvas
                 ref={(el) => {
                   if (el) canvasRefs.current.set(clientId, el);
