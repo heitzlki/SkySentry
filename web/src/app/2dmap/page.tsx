@@ -29,7 +29,7 @@ export default function StreamingPage() {
 
   const handleFrameUpdate = (clientId: string, data: any) => {
     const frameCount = data.stats?.frameCount || 0;
-    if (frameCount >= lastFetchedFrame.current + 25) {
+    if (frameCount >= lastFetchedFrame.current + 5) {
       fetchAiProcess();
       lastFetchedFrame.current = frameCount;
     }
