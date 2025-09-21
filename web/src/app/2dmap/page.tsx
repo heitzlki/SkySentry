@@ -24,7 +24,7 @@ export default function StreamingPage() {
     };
 
     fetchAiProcess();
-    const interval = setInterval(fetchAiProcess, 1000);
+    const interval = setInterval(fetchAiProcess, 2000);
 
     return () => clearInterval(interval);
   }, []);

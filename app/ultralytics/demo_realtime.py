@@ -8,6 +8,7 @@ import numpy as np
 from collections import defaultdict, deque
 from yoloe_rt import YoloeRealtime
 from fetch_frame import get_frame
+import threading
 
 # ---------------- Config ----------------
 CAM_INDEX             = 0
@@ -22,13 +23,14 @@ WIN  = "YOLOE • Live | Top-down (fading)"
 
 # Global YoloeRealtime instance to maintain tracking state across API calls
 _global_rt = None
+_rt_lock = threading.Lock()
 
 def get_global_rt():
     """Get or create the global YoloeRealtime instance."""
     global _global_rt
     if _global_rt is None:
         print("[DEBUG] Creating global YoloeRealtime instance")
-        _global_rt = YoloeRealtime(weights="yoloe-11s-seg.pt", device=0)
+        _global_rt = YoloeRealtime(weights="yoloe-11s-seg.pt", device=None)  # Use CPU for stability
     return _global_rt
 
 def color_for_id(gid: int):
@@ -147,9 +149,10 @@ def get_res_for_id(client_id):
         print(f"[DEBUG] Using global YOLOE processor for client {client_id}")
         rt = get_global_rt()
         
-        # Process the frame
-        print(f"[DEBUG] Running YOLO detection on frame for client {client_id}")
-        json_list, _ = rt.process_frame(frame_np, return_vis=False)
+        # Process the frame with lock to prevent concurrent access
+        with _rt_lock:
+            print(f"[DEBUG] Running YOLO detection on frame for client {client_id}")
+            json_list, _ = rt.process_frame(frame_np, return_vis=False)
         
         print(f"[DEBUG] YOLO processing complete for client {client_id}, detections: {len(json_list)}")
         print(f"[DEBUG] Current frame index: {rt.frame_idx}")

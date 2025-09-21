@@ -268,9 +268,8 @@ const app = new Elysia()
 
         // Cleanup old objects that haven't been seen for too long
         const toDelete: number[] = [];
-        for (const [groupId, lastFrame] of lastSeen) {
-          const framesSinceLastSeen = currentFrame - (lastFrame ?? 0);
-          if (framesSinceLastSeen > CLEANUP_FRAMES) {
+        for (const [groupId] of buffer) {
+          if (!currentGroupIds.has(groupId)) {
             toDelete.push(groupId);
           }
         }
@@ -278,12 +277,10 @@ const app = new Elysia()
         for (const groupId of toDelete) {
           buffer.delete(groupId);
           lastSeen.delete(groupId);
-          console.log(
-            `Cleaned up object ${groupId} after ${CLEANUP_FRAMES} frames`
-          );
+          console.log(`Cleaned up object ${groupId} immediately`);
         }
 
-        // Compute results - include objects seen recently (persistence)
+        // Compute results - only include currently active objects
         const result: {
           x: number;
           y: number;
@@ -299,14 +296,9 @@ const app = new Elysia()
         for (const [groupId, groupDets] of buffer) {
           if (groupDets.length === 0) continue;
 
-          const lastSeenFrame = lastSeen.get(groupId) ?? 0;
-          const framesSinceLastSeen = currentFrame - lastSeenFrame;
-
-          // Include if currently detected OR recently seen (within persistence window)
+          // Only include currently detected objects
           const isActive = currentGroupIds.has(groupId);
-          const isPersistent = framesSinceLastSeen <= PERSISTENCE_FRAMES;
-
-          if (!isActive && !isPersistent) continue;
+          if (!isActive) continue;
 
           // Sort by frame
           groupDets.sort((a, b) => (a.frame ?? 0) - (b.frame ?? 0));
