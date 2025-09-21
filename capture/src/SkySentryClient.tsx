@@ -10,7 +10,7 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
   clientId,
   serverUrl = import.meta.env.VITE_WEBSOCKET_URL ||
     "wss://demo8080.shivi.io/ws",
-  frameRate = 30, // Increased for lower latency
+  frameRate = 10, // Limited to 10 FPS for optimal performance
 }) => {
   const [status, setStatus] = useState<
     "disconnected" | "connecting" | "connected" | "error"
@@ -89,9 +89,9 @@ const SkySentryClient: React.FC<SkySentryClientProps> = ({
     if (
       !ws ||
       ws.readyState !== WebSocket.OPEN ||
-      ws.bufferedAmount > 1024 * 256
+      ws.bufferedAmount > 1024 * 4
     ) {
-      // 256KB buffer limit
+      // 4KB buffer limit
       droppedFramesRef.current++;
       return;
     }

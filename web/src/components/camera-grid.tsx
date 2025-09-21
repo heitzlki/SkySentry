@@ -15,6 +15,28 @@ export function CameraGrid() {
   const wsRef = useRef<WebSocket | null>(null);
   const canvasRefs = useRef(new Map<string, HTMLCanvasElement>());
   const imgRef = useRef(new Image());
+  const currentClientIdRef = useRef<string | null>(null);
+  const isLoadingRef = useRef(false);
+
+  // Set up image onload handler once
+  useEffect(() => {
+    imgRef.current.onload = () => {
+      const clientId = currentClientIdRef.current;
+      if (clientId) {
+        const canvas = canvasRefs.current.get(clientId);
+        if (canvas) {
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            canvas.width = imgRef.current.naturalWidth;
+            canvas.height = imgRef.current.naturalHeight;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(imgRef.current, 0, 0);
+          }
+        }
+      }
+      isLoadingRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     const connectWebSocket = () => {
@@ -45,18 +67,10 @@ export function CameraGrid() {
 
             // Update canvas directly for low latency
             const canvas = canvasRefs.current.get(clientId);
-            if (canvas) {
-              const img = imgRef.current;
-              img.onload = () => {
-                const ctx = canvas.getContext("2d");
-                if (ctx) {
-                  canvas.width = img.naturalWidth;
-                  canvas.height = img.naturalHeight;
-                  ctx.clearRect(0, 0, canvas.width, canvas.height);
-                  ctx.drawImage(img, 0, 0);
-                }
-              };
-              img.src = image;
+            if (canvas && !isLoadingRef.current) {
+              currentClientIdRef.current = clientId;
+              isLoadingRef.current = true;
+              imgRef.current.src = image;
             }
           }
         } catch (error) {

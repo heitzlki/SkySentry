@@ -303,7 +303,8 @@ func (ss *StreamServer) handleStreamingWebSocket(w http.ResponseWriter, r *http.
 	if err != nil {
 		return
 	}
-	viewer := &Viewer{conn: conn, send: make(chan []byte, 256)} // Buffer 256 messages
+	viewer := &Viewer{conn: conn, send: make(chan []byte, 0)} // Unbuffered channel for immediate dropping
+	
 	viewersMutex.Lock()
 	viewers[viewer] = true
 	viewersMutex.Unlock()

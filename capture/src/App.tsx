@@ -23,7 +23,7 @@ function App() {
           // clientId={clientId}
           clientId={"demo"}
           // autoStartCamera={false} // Disabled by default - let users choose camera first
-          frameRate={20} // Optimized for smooth streaming
+          frameRate={10} // Limited to 10 FPS for optimal performance
         />
       </main>
     </div>
