@@ -1,9 +1,23 @@
-"use client"
+'use client';
 
-import * as React from "react"
-import { Area, AreaChart, CartesianGrid, XAxis } from "recharts"
+import * as React from 'react';
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Bar,
+  BarChart,
+  Line,
+  LineChart,
+  Scatter,
+  ScatterChart,
+  ZAxis,
+} from 'recharts';
+import { useMemo, useCallback, useEffect } from 'react';
 
-import { useIsMobile } from "@/hooks/use-mobile"
+import { useIsMobile } from '@/hooks/use-mobile';
 import {
   Card,
   CardAction,
@@ -11,281 +25,851 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card"
+} from '@/components/ui/card';
 import {
   ChartConfig,
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
-} from "@/components/ui/chart"
+} from '@/components/ui/chart';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
-import {
-  ToggleGroup,
-  ToggleGroupItem,
-} from "@/components/ui/toggle-group"
+} from '@/components/ui/select';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Slider } from '@/components/ui/slider';
+import { Button } from '@/components/ui/button';
+import { Play, Pause, RotateCcw, SkipBack, SkipForward } from 'lucide-react';
+import detectionData from '@/app/logs/data.json';
+import { generateObjectColors, getUniqueGlobalIds } from '@/lib/object-colors';
 
-export const description = "An interactive area chart"
-
-const chartData = [
-  { date: "2024-04-01", desktop: 222, mobile: 150 },
-  { date: "2024-04-02", desktop: 97, mobile: 180 },
-  { date: "2024-04-03", desktop: 167, mobile: 120 },
-  { date: "2024-04-04", desktop: 242, mobile: 260 },
-  { date: "2024-04-05", desktop: 373, mobile: 290 },
-  { date: "2024-04-06", desktop: 301, mobile: 340 },
-  { date: "2024-04-07", desktop: 245, mobile: 180 },
-  { date: "2024-04-08", desktop: 409, mobile: 320 },
-  { date: "2024-04-09", desktop: 59, mobile: 110 },
-  { date: "2024-04-10", desktop: 261, mobile: 190 },
-  { date: "2024-04-11", desktop: 327, mobile: 350 },
-  { date: "2024-04-12", desktop: 292, mobile: 210 },
-  { date: "2024-04-13", desktop: 342, mobile: 380 },
-  { date: "2024-04-14", desktop: 137, mobile: 220 },
-  { date: "2024-04-15", desktop: 120, mobile: 170 },
-  { date: "2024-04-16", desktop: 138, mobile: 190 },
-  { date: "2024-04-17", desktop: 446, mobile: 360 },
-  { date: "2024-04-18", desktop: 364, mobile: 410 },
-  { date: "2024-04-19", desktop: 243, mobile: 180 },
-  { date: "2024-04-20", desktop: 89, mobile: 150 },
-  { date: "2024-04-21", desktop: 137, mobile: 200 },
-  { date: "2024-04-22", desktop: 224, mobile: 170 },
-  { date: "2024-04-23", desktop: 138, mobile: 230 },
-  { date: "2024-04-24", desktop: 387, mobile: 290 },
-  { date: "2024-04-25", desktop: 215, mobile: 250 },
-  { date: "2024-04-26", desktop: 75, mobile: 130 },
-  { date: "2024-04-27", desktop: 383, mobile: 420 },
-  { date: "2024-04-28", desktop: 122, mobile: 180 },
-  { date: "2024-04-29", desktop: 315, mobile: 240 },
-  { date: "2024-04-30", desktop: 454, mobile: 380 },
-  { date: "2024-05-01", desktop: 165, mobile: 220 },
-  { date: "2024-05-02", desktop: 293, mobile: 310 },
-  { date: "2024-05-03", desktop: 247, mobile: 190 },
-  { date: "2024-05-04", desktop: 385, mobile: 420 },
-  { date: "2024-05-05", desktop: 481, mobile: 390 },
-  { date: "2024-05-06", desktop: 498, mobile: 520 },
-  { date: "2024-05-07", desktop: 388, mobile: 300 },
-  { date: "2024-05-08", desktop: 149, mobile: 210 },
-  { date: "2024-05-09", desktop: 227, mobile: 180 },
-  { date: "2024-05-10", desktop: 293, mobile: 330 },
-  { date: "2024-05-11", desktop: 335, mobile: 270 },
-  { date: "2024-05-12", desktop: 197, mobile: 240 },
-  { date: "2024-05-13", desktop: 197, mobile: 160 },
-  { date: "2024-05-14", desktop: 448, mobile: 490 },
-  { date: "2024-05-15", desktop: 473, mobile: 380 },
-  { date: "2024-05-16", desktop: 338, mobile: 400 },
-  { date: "2024-05-17", desktop: 499, mobile: 420 },
-  { date: "2024-05-18", desktop: 315, mobile: 350 },
-  { date: "2024-05-19", desktop: 235, mobile: 180 },
-  { date: "2024-05-20", desktop: 177, mobile: 230 },
-  { date: "2024-05-21", desktop: 82, mobile: 140 },
-  { date: "2024-05-22", desktop: 81, mobile: 120 },
-  { date: "2024-05-23", desktop: 252, mobile: 290 },
-  { date: "2024-05-24", desktop: 294, mobile: 220 },
-  { date: "2024-05-25", desktop: 201, mobile: 250 },
-  { date: "2024-05-26", desktop: 213, mobile: 170 },
-  { date: "2024-05-27", desktop: 420, mobile: 460 },
-  { date: "2024-05-28", desktop: 233, mobile: 190 },
-  { date: "2024-05-29", desktop: 78, mobile: 130 },
-  { date: "2024-05-30", desktop: 340, mobile: 280 },
-  { date: "2024-05-31", desktop: 178, mobile: 230 },
-  { date: "2024-06-01", desktop: 178, mobile: 200 },
-  { date: "2024-06-02", desktop: 470, mobile: 410 },
-  { date: "2024-06-03", desktop: 103, mobile: 160 },
-  { date: "2024-06-04", desktop: 439, mobile: 380 },
-  { date: "2024-06-05", desktop: 88, mobile: 140 },
-  { date: "2024-06-06", desktop: 294, mobile: 250 },
-  { date: "2024-06-07", desktop: 323, mobile: 370 },
-  { date: "2024-06-08", desktop: 385, mobile: 320 },
-  { date: "2024-06-09", desktop: 438, mobile: 480 },
-  { date: "2024-06-10", desktop: 155, mobile: 200 },
-  { date: "2024-06-11", desktop: 92, mobile: 150 },
-  { date: "2024-06-12", desktop: 492, mobile: 420 },
-  { date: "2024-06-13", desktop: 81, mobile: 130 },
-  { date: "2024-06-14", desktop: 426, mobile: 380 },
-  { date: "2024-06-15", desktop: 307, mobile: 350 },
-  { date: "2024-06-16", desktop: 371, mobile: 310 },
-  { date: "2024-06-17", desktop: 475, mobile: 520 },
-  { date: "2024-06-18", desktop: 107, mobile: 170 },
-  { date: "2024-06-19", desktop: 341, mobile: 290 },
-  { date: "2024-06-20", desktop: 408, mobile: 450 },
-  { date: "2024-06-21", desktop: 169, mobile: 210 },
-  { date: "2024-06-22", desktop: 317, mobile: 270 },
-  { date: "2024-06-23", desktop: 480, mobile: 530 },
-  { date: "2024-06-24", desktop: 132, mobile: 180 },
-  { date: "2024-06-25", desktop: 141, mobile: 190 },
-  { date: "2024-06-26", desktop: 434, mobile: 380 },
-  { date: "2024-06-27", desktop: 448, mobile: 490 },
-  { date: "2024-06-28", desktop: 149, mobile: 200 },
-  { date: "2024-06-29", desktop: 103, mobile: 160 },
-  { date: "2024-06-30", desktop: 446, mobile: 400 },
-]
+export const description = 'Real-time detection analytics';
 
 const chartConfig = {
-  visitors: {
-    label: "Visitors",
+  detections: {
+    label: 'Detections',
+    color: 'hsl(var(--emerald-500))',
   },
-  desktop: {
-    label: "Desktop",
-    color: "var(--primary)",
+  objects: {
+    label: 'Unique Objects',
+    color: 'hsl(var(--amber-500))',
   },
-  mobile: {
-    label: "Mobile",
-    color: "var(--primary)",
+  height: {
+    label: 'Height (m)',
+    color: 'hsl(var(--red-500))',
   },
-} satisfies ChartConfig
+  distance: {
+    label: 'Distance (m)',
+    color: 'hsl(var(--gray-500))',
+  },
+  safe: {
+    label: 'Safe Objects',
+    color: 'rgb(34, 197, 94)', // emerald-500
+  },
+  dangerous: {
+    label: 'Dangerous Objects',
+    color: 'rgb(239, 68, 68)', // red-500
+  },
+  medium: {
+    label: 'Medium Risk',
+    color: 'rgb(245, 158, 11)', // amber-500
+  },
+  unsure: {
+    label: 'Unsure',
+    color: 'rgb(107, 114, 128)', // gray-500
+  },
+} satisfies ChartConfig;
 
 export function ChartAreaInteractive() {
-  const isMobile = useIsMobile()
-  const [timeRange, setTimeRange] = React.useState("90d")
+  const isMobile = useIsMobile();
+  const [timeRange, setTimeRange] = React.useState('all');
+  const [chartType, setChartType] = React.useState('temporal');
+  
+  // Timeline slider state
+  const [timelineProgress, setTimelineProgress] = React.useState([0]);
+  const [isStreaming, setIsStreaming] = React.useState(false);
+  const [streamingData, setStreamingData] = React.useState(detectionData);
+  
+  // Autoplay state
+  const [isAutoPlaying, setIsAutoPlaying] = React.useState(false);
+  const [autoPlaySpeed, setAutoPlaySpeed] = React.useState(50); // milliseconds per frame
+  const autoPlayIntervalRef = React.useRef<NodeJS.Timeout | null>(null);
 
-  React.useEffect(() => {
-    if (isMobile) {
-      setTimeRange("7d")
+  const processedData = useMemo(() => {
+    // Ensure we have valid detection data
+    if (!Array.isArray(streamingData) || streamingData.length === 0) {
+      return {
+        temporalData: [],
+        spatialData: [],
+        objectTypeData: [],
+        trackingData: [],
+        objectColors: new Map(),
+        maxFrame: 0,
+        spatialBounds: { minX: 0, maxX: 0, minY: 0, maxY: 0, minZ: 0, maxZ: 0 },
+      };
     }
-  }, [isMobile])
 
-  const filteredData = chartData.filter((item) => {
-    const date = new Date(item.date)
-    const referenceDate = new Date("2024-06-30")
-    let daysToSubtract = 90
-    if (timeRange === "30d") {
-      daysToSubtract = 30
-    } else if (timeRange === "7d") {
-      daysToSubtract = 7
+    // Calculate the frame range based on timeline progress
+    const maxFrame = Math.max(...streamingData.map((d: any) => d.frame || 0));
+    const targetFrame = Math.floor((timelineProgress[0] / 100) * maxFrame);
+    const filteredData = streamingData.filter((d: any) => d.frame <= targetFrame);
+
+    // Generate unique colors for each global_id
+    const uniqueGlobalIds = getUniqueGlobalIds(filteredData);
+    const objectColors = generateObjectColors(uniqueGlobalIds);
+
+    // Calculate spatial bounds for perfect square
+    const validSpatialData = filteredData.filter(
+      (d: any) =>
+        d &&
+        typeof d.Xw === 'number' &&
+        !isNaN(d.Xw) &&
+        typeof d.Yw === 'number' &&
+        !isNaN(d.Yw) &&
+        typeof d.Zw === 'number' &&
+        !isNaN(d.Zw)
+    );
+
+    let spatialBounds = { minX: 0, maxX: 0, minY: 0, maxY: 0, minZ: 0, maxZ: 0 };
+    if (validSpatialData.length > 0) {
+      const xValues = validSpatialData.map((d: any) => d.Xw);
+      const yValues = validSpatialData.map((d: any) => d.Yw);
+      const zValues = validSpatialData.map((d: any) => d.Zw);
+      
+      const minX = Math.min(...xValues);
+      const maxX = Math.max(...xValues);
+      const minY = Math.min(...yValues);
+      const maxY = Math.max(...yValues);
+      const minZ = Math.min(...zValues);
+      const maxZ = Math.max(...zValues);
+      
+      // Calculate the maximum range to make it square
+      const rangeX = maxX - minX;
+      const rangeY = maxY - minY;
+      const maxRange = Math.max(rangeX, rangeY);
+      
+      // Center the smaller dimension
+      const centerX = (minX + maxX) / 2;
+      const centerY = (minY + maxY) / 2;
+      
+      spatialBounds = {
+        minX: centerX - maxRange / 2,
+        maxX: centerX + maxRange / 2,
+        minY: centerY - maxRange / 2,
+        maxY: centerY + maxRange / 2,
+        minZ,
+        maxZ,
+      };
     }
-    const startDate = new Date(referenceDate)
-    startDate.setDate(startDate.getDate() - daysToSubtract)
-    return date >= startDate
-  })
+
+    // Group detections by frame for temporal analysis
+    const frameGroups = filteredData.reduce(
+      (acc: Record<number, any[]>, detection: any) => {
+        if (typeof detection.frame === 'number') {
+          if (!acc[detection.frame]) {
+            acc[detection.frame] = [];
+          }
+          acc[detection.frame].push(detection);
+        }
+        return acc;
+      },
+      {}
+    );
+
+    // Create temporal chart data
+    const temporalData = Object.entries(frameGroups)
+      .map(([frame, detections]: [string, any[]]) => {
+        const frameNum = parseInt(frame);
+        const validDetections = detections.filter(
+          (d) => d && typeof d === 'object'
+        );
+        const heightData = validDetections
+          .filter((d: any) => typeof d.Zw === 'number' && !isNaN(d.Zw))
+          .map((d: any) => d.Zw);
+
+        return {
+          frame: frameNum,
+          detections: validDetections.length,
+          uniqueObjects: new Set(
+            validDetections
+              .map((d: any) => d.global_id)
+              .filter((id) => typeof id === 'number')
+          ).size,
+          avgHeight:
+            heightData.length > 0
+              ? heightData.reduce((sum: number, h: number) => sum + h, 0) /
+                heightData.length
+              : 0,
+        };
+      })
+      .filter((item) => !isNaN(item.frame))
+      .sort((a, b) => a.frame - b.frame);
+
+    // Create spatial distribution data (3D positions) with colors
+    const spatialData = validSpatialData
+      .filter((d: any) => typeof d.global_id === 'number')
+      .map((d: any) => ({
+        x: d.Xw,
+        y: d.Yw,
+        z: d.Zw,
+        label: d.label || 'Unknown',
+        global_id: d.global_id,
+        frame: d.frame,
+        color: objectColors.get(d.global_id) || 'rgb(107, 114, 128)',
+      }));
+
+    // Create object type distribution
+    const objectTypes = filteredData.reduce(
+      (acc: Record<string, number>, detection: any) => {
+        if (detection && typeof detection.label === 'string') {
+          acc[detection.label] = (acc[detection.label] || 0) + 1;
+        }
+        return acc;
+      },
+      {}
+    );
+
+    const objectTypeData = Object.entries(objectTypes)
+      .map(([label, count]) => ({ label, count }))
+      .sort((a: any, b: any) => b.count - a.count);
+
+    // Create tracking consistency data
+    const objectGroups = filteredData.reduce(
+      (acc: Record<number, any>, detection: any) => {
+        if (detection && typeof detection.global_id === 'number') {
+          if (!acc[detection.global_id]) {
+            acc[detection.global_id] = {
+              global_id: detection.global_id,
+              frames: [],
+              label: detection.label || 'Unknown',
+            };
+          }
+          if (typeof detection.frame === 'number') {
+            acc[detection.global_id].frames.push(detection.frame);
+          }
+        }
+        return acc;
+      },
+      {}
+    );
+
+    const trackingData = Object.values(objectGroups)
+      .filter((track: any) => track.frames.length > 0)
+      .map((track: any) => {
+        const sortedFrames = track.frames.sort((a: number, b: number) => a - b);
+        const frameSpan =
+          sortedFrames[sortedFrames.length - 1] - sortedFrames[0] + 1;
+        const actualFrames = sortedFrames.length;
+        const consistency =
+          frameSpan > 0 ? (actualFrames / frameSpan) * 100 : 0;
+
+        return {
+          global_id: track.global_id,
+          label: track.label,
+          consistency: Math.round(Math.max(0, Math.min(100, consistency))),
+          duration: frameSpan,
+          detections: actualFrames,
+        };
+      });
+
+    return {
+      temporalData,
+      spatialData,
+      objectTypeData,
+      trackingData,
+      objectColors,
+      maxFrame,
+      spatialBounds,
+    };
+  }, [streamingData, timelineProgress]);
+
+  // Streaming functionality
+  const fetchNewData = useCallback(async () => {
+    try {
+      // Replace with your actual API endpoint
+      const response = await fetch('/api/detections/latest');
+      if (response.ok) {
+        const newData = await response.json();
+        setStreamingData(prevData => [...prevData, ...newData]);
+      }
+    } catch (error) {
+      console.error('Failed to fetch new detection data:', error);
+    }
+  }, []);
+
+  // Autoplay functionality
+  const startAutoPlay = useCallback(() => {
+    if (autoPlayIntervalRef.current) {
+      clearInterval(autoPlayIntervalRef.current);
+    }
+    
+    autoPlayIntervalRef.current = setInterval(() => {
+      setTimelineProgress(current => {
+        const newProgress = current[0] + 1;
+        if (newProgress >= 100) {
+          // If we reach the end, either stop or start streaming
+          setIsAutoPlaying(false);
+          if (isStreaming) {
+            return [100];
+          }
+          return [100];
+        }
+        return [newProgress];
+      });
+    }, autoPlaySpeed);
+  }, [autoPlaySpeed, isStreaming]);
+
+  const stopAutoPlay = useCallback(() => {
+    if (autoPlayIntervalRef.current) {
+      clearInterval(autoPlayIntervalRef.current);
+      autoPlayIntervalRef.current = null;
+    }
+  }, []);
+
+  // Handle autoplay state changes
+  useEffect(() => {
+    if (isAutoPlaying) {
+      startAutoPlay();
+    } else {
+      stopAutoPlay();
+    }
+
+    return () => stopAutoPlay();
+  }, [isAutoPlaying, startAutoPlay, stopAutoPlay]);
+
+  // Handle streaming effect
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    
+    if (isStreaming && timelineProgress[0] === 100) {
+      interval = setInterval(() => {
+        fetchNewData();
+      }, 3000); // Poll every 3 seconds
+    }
+    
+    return () => {
+      if (interval) {
+        clearInterval(interval);
+      }
+    };
+  }, [isStreaming, timelineProgress, fetchNewData]);
+
+  const handleTimelineChange = (value: number[]) => {
+    setTimelineProgress(value);
+    if (value[0] < 100) {
+      setIsStreaming(false);
+    }
+    // Pause autoplay when manually changing timeline
+    if (isAutoPlaying) {
+      setIsAutoPlaying(false);
+    }
+  };
+
+  const toggleAutoPlay = () => {
+    if (timelineProgress[0] >= 100) {
+      // If at the end, reset to beginning and start
+      setTimelineProgress([0]);
+      setIsAutoPlaying(true);
+    } else {
+      setIsAutoPlaying(!isAutoPlaying);
+    }
+  };
+
+  const toggleStreaming = () => {
+    if (timelineProgress[0] === 100) {
+      setIsStreaming(!isStreaming);
+    } else {
+      // Move to the end and start streaming
+      setTimelineProgress([100]);
+      setIsStreaming(true);
+    }
+    // Stop autoplay when starting streaming
+    setIsAutoPlaying(false);
+  };
+
+  const resetTimeline = () => {
+    setTimelineProgress([0]);
+    setIsStreaming(false);
+    setIsAutoPlaying(false);
+};
+
+  const stepBackward = () => {
+    setTimelineProgress(current => [Math.max(0, current[0] - 5)]);
+    setIsAutoPlaying(false);
+  };
+
+  const stepForward = () => {
+    setTimelineProgress(current => [Math.min(100, current[0] + 5)]);
+    setIsAutoPlaying(false);
+  };
+
+  const filteredTemporalData = useMemo(() => {
+    if (timeRange === 'all' || processedData.temporalData.length === 0) {
+      return processedData.temporalData;
+    }
+
+    const dataLength = processedData.temporalData.length;
+    let sliceSize: number;
+
+    switch (timeRange) {
+      case 'recent':
+        sliceSize = Math.floor(dataLength * 0.2); // Last 20%
+        return processedData.temporalData.slice(-sliceSize);
+      case 'mid':
+        sliceSize = Math.floor(dataLength * 0.5); // Last 50%
+        return processedData.temporalData.slice(-sliceSize);
+      case 'early':
+        sliceSize = Math.floor(dataLength * 0.3); // First 30%
+        return processedData.temporalData.slice(0, sliceSize);
+      default:
+        return processedData.temporalData;
+    }
+  }, [processedData.temporalData, timeRange]);
 
   return (
-    <Card className="@container/card">
+    <Card className='@container/card'>
       <CardHeader>
-        <CardTitle>Total Visitors</CardTitle>
+        <CardTitle>Detection Analytics</CardTitle>
         <CardDescription>
-          <span className="hidden @[540px]/card:block">
-            Total for the last 3 months
+          <span className='hidden @[540px]/card:block'>
+            Real-time analysis of object detection and tracking performance
           </span>
-          <span className="@[540px]/card:hidden">Last 3 months</span>
+          <span className='@[540px]/card:hidden'>
+            Object detection analytics
+          </span>
         </CardDescription>
+        
+        {/* Timeline Slider */}
+        <div className="space-y-3 pt-4 border-t">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">Timeline</span>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={stepBackward}
+                disabled={timelineProgress[0] === 0}
+                className="px-2"
+              >
+                <SkipBack className="h-3 w-3" />
+              </Button>
+              
+              <Button
+                variant={isAutoPlaying ? "destructive" : "default"}
+                size="sm"
+                onClick={toggleAutoPlay}
+                className="px-3"
+              >
+                {isAutoPlaying ? (
+                  <>
+                    <Pause className="h-4 w-4 mr-1" />
+                    Pause
+                  </>
+                ) : (
+                  <>
+                    <Play className="h-4 w-4 mr-1" />
+                    Play
+                  </>
+                )}
+              </Button>
+              
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={stepForward}
+                disabled={timelineProgress[0] === 100}
+                className="px-2"
+              >
+                <SkipForward className="h-3 w-3" />
+              </Button>
+              
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={resetTimeline}
+                disabled={timelineProgress[0] === 0 && !isAutoPlaying}
+                className="px-2"
+              >
+                <RotateCcw className="h-4 w-4" />
+              </Button>
+              
+              <Button
+                variant={isStreaming ? "destructive" : "secondary"}
+                size="sm"
+                onClick={toggleStreaming}
+                disabled={timelineProgress[0] < 100 && !isStreaming}
+                className="px-3"
+              >
+                {isStreaming ? "Stop Stream" : "Stream"}
+              </Button>
+            </div>
+          </div>
+          
+          {/* Speed Control */}
+          <div className="flex items-center gap-3 px-2">
+            <span className="text-xs text-muted-foreground">Speed:</span>
+            <div className="flex items-center gap-2 flex-1">
+              <span className="text-xs">Slow</span>
+              <Slider
+                value={[101 - autoPlaySpeed]}
+                onValueChange={(value) => setAutoPlaySpeed(101 - value[0])}
+                max={95}
+                min={5}
+                step={5}
+                className="flex-1 max-w-24"
+              />
+              <span className="text-xs">Fast</span>
+            </div>
+          </div>
+          
+          <div className="px-2">
+            <Slider
+              value={timelineProgress}
+              onValueChange={handleTimelineChange}
+              max={100}
+              step={1}
+              className="w-full"
+            />
+          </div>
+          
+          <div className="flex justify-between text-xs text-muted-foreground px-2">
+            <span>Frame 0</span>
+            <span>
+              Current: Frame {Math.floor((timelineProgress[0] / 100) * processedData.maxFrame)}
+              {isAutoPlaying && " (Playing)"}
+              {isStreaming && " (Live)"}
+            </span>
+            <span>Frame {processedData.maxFrame}</span>
+          </div>
+        </div>
+
         <CardAction>
-          <ToggleGroup
-            type="single"
-            value={timeRange}
-            onValueChange={setTimeRange}
-            variant="outline"
-            className="hidden *:data-[slot=toggle-group-item]:!px-4 @[767px]/card:flex"
-          >
-            <ToggleGroupItem value="90d">Last 3 months</ToggleGroupItem>
-            <ToggleGroupItem value="30d">Last 30 days</ToggleGroupItem>
-            <ToggleGroupItem value="7d">Last 7 days</ToggleGroupItem>
-          </ToggleGroup>
-          <Select value={timeRange} onValueChange={setTimeRange}>
-            <SelectTrigger
-              className="flex w-40 **:data-[slot=select-value]:block **:data-[slot=select-value]:truncate @[767px]/card:hidden"
-              size="sm"
-              aria-label="Select a value"
-            >
-              <SelectValue placeholder="Last 3 months" />
-            </SelectTrigger>
-            <SelectContent className="rounded-xl">
-              <SelectItem value="90d" className="rounded-lg">
-                Last 3 months
-              </SelectItem>
-              <SelectItem value="30d" className="rounded-lg">
-                Last 30 days
-              </SelectItem>
-              <SelectItem value="7d" className="rounded-lg">
-                Last 7 days
-              </SelectItem>
-            </SelectContent>
-          </Select>
+          <div className='flex flex-col gap-2 @[767px]/card:flex-row'>
+            <ToggleGroup
+              type='single'
+              value={timeRange}
+              onValueChange={setTimeRange}
+              variant='outline'
+              className='hidden *:data-[slot=toggle-group-item]:!px-4 @[767px]/card:flex'>
+              <ToggleGroupItem value='all'>All Frames</ToggleGroupItem>
+              <ToggleGroupItem value='recent'>Recent</ToggleGroupItem>
+              <ToggleGroupItem value='early'>Early</ToggleGroupItem>
+            </ToggleGroup>
+            <Select value={timeRange} onValueChange={setTimeRange}>
+              <SelectTrigger
+                className='flex w-40 **:data-[slot=select-value]:block **:data-[slot=select-value]:truncate @[767px]/card:hidden'
+                size='sm'
+                aria-label='Select time range'>
+                <SelectValue placeholder='All Frames' />
+              </SelectTrigger>
+              <SelectContent className='rounded-xl'>
+                <SelectItem value='all' className='rounded-lg'>
+                  All Frames
+                </SelectItem>
+                <SelectItem value='recent' className='rounded-lg'>
+                  Recent
+                </SelectItem>
+                <SelectItem value='early' className='rounded-lg'>
+                  Early
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </CardAction>
       </CardHeader>
-      <CardContent className="px-2 pt-4 sm:px-6 sm:pt-6">
-        <ChartContainer
-          config={chartConfig}
-          className="aspect-auto h-[250px] w-full"
-        >
-          <AreaChart data={filteredData}>
-            <defs>
-              <linearGradient id="fillDesktop" x1="0" y1="0" x2="0" y2="1">
-                <stop
-                  offset="5%"
-                  stopColor="var(--color-desktop)"
-                  stopOpacity={1.0}
+      <CardContent className='px-2 pt-4 sm:px-6 sm:pt-6'>
+        <Tabs value={chartType} onValueChange={setChartType} className='w-full'>
+          <TabsList className='grid w-full grid-cols-4'>
+            <TabsTrigger value='temporal'>Timeline</TabsTrigger>
+            <TabsTrigger value='objects'>Objects</TabsTrigger>
+            <TabsTrigger value='spatial'>3D Space</TabsTrigger>
+            <TabsTrigger value='tracking'>Tracking</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value='temporal' className='mt-6'>
+            <ChartContainer
+              config={chartConfig}
+              className='aspect-auto h-[300px] w-full'>
+              <AreaChart data={filteredTemporalData}>
+                <defs>
+                  <linearGradient
+                    id='fillDetections'
+                    x1='0'
+                    y1='0'
+                    x2='0'
+                    y2='1'>
+                    <stop
+                      offset='5%'
+                      stopColor='rgb(34, 197, 94)'
+                      stopOpacity={0.8}
+                    />
+                    <stop
+                      offset='95%'
+                      stopColor='rgb(34, 197, 94)'
+                      stopOpacity={0.1}
+                    />
+                  </linearGradient>
+                  <linearGradient id='fillObjects' x1='0' y1='0' x2='0' y2='1'>
+                    <stop
+                      offset='5%'
+                      stopColor='rgb(245, 158, 11)'
+                      stopOpacity={0.8}
+                    />
+                    <stop
+                      offset='95%'
+                      stopColor='rgb(245, 158, 11)'
+                      stopOpacity={0.1}
+                    />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid vertical={false} />
+                <XAxis
+                  dataKey='frame'
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={8}
+                  minTickGap={32}
+                  tickFormatter={(value) => `Frame ${value}`}
                 />
-                <stop
-                  offset="95%"
-                  stopColor="var(--color-desktop)"
-                  stopOpacity={0.1}
+                <YAxis tickLine={false} axisLine={false} tickMargin={8} />
+                <ChartTooltip
+                  cursor={false}
+                  content={
+                    <ChartTooltipContent
+                      labelFormatter={(value) => `Frame ${value}`}
+                      indicator='dot'
+                    />
+                  }
                 />
-              </linearGradient>
-              <linearGradient id="fillMobile" x1="0" y1="0" x2="0" y2="1">
-                <stop
-                  offset="5%"
-                  stopColor="var(--color-mobile)"
-                  stopOpacity={0.8}
+                <Area
+                  dataKey='detections'
+                  type='natural'
+                  fill='url(#fillDetections)'
+                  stroke='rgb(34, 197, 94)'
+                  stackId='a'
                 />
-                <stop
-                  offset="95%"
-                  stopColor="var(--color-mobile)"
-                  stopOpacity={0.1}
+                <Area
+                  dataKey='uniqueObjects'
+                  type='natural'
+                  fill='url(#fillObjects)'
+                  stroke='rgb(245, 158, 11)'
+                  stackId='b'
                 />
-              </linearGradient>
-            </defs>
-            <CartesianGrid vertical={false} />
-            <XAxis
-              dataKey="date"
-              tickLine={false}
-              axisLine={false}
-              tickMargin={8}
-              minTickGap={32}
-              tickFormatter={(value) => {
-                const date = new Date(value)
-                return date.toLocaleDateString("en-US", {
-                  month: "short",
-                  day: "numeric",
-                })
-              }}
-            />
-            <ChartTooltip
-              cursor={false}
-              content={
-                <ChartTooltipContent
-                  labelFormatter={(value) => {
-                    return new Date(value).toLocaleDateString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                    })
+              </AreaChart>
+            </ChartContainer>
+          </TabsContent>
+
+          <TabsContent value='objects' className='mt-6'>
+            <ChartContainer
+              config={chartConfig}
+              className='aspect-auto h-[300px] w-full'>
+              <BarChart data={processedData.objectTypeData.slice(0, 10)}>
+                <CartesianGrid vertical={false} />
+                <XAxis
+                  dataKey='label'
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={8}
+                  angle={-45}
+                  textAnchor='end'
+                  height={80}
+                />
+                <YAxis tickLine={false} axisLine={false} tickMargin={8} />
+                <ChartTooltip
+                  cursor={false}
+                  content={<ChartTooltipContent indicator='dashed' />}
+                />
+                <Bar dataKey='count' fill='rgb(34, 197, 94)' radius={4} />
+              </BarChart>
+            </ChartContainer>
+          </TabsContent>
+
+          <TabsContent value='spatial' className='mt-6'>
+            <ChartContainer
+              config={chartConfig}
+              className='aspect-square h-[400px] w-full'>
+              <ScatterChart 
+                data={processedData.spatialData.slice(0, 200)}
+                margin={{ top: 20, right: 20, bottom: 20, left: 20 }}
+              >
+                <CartesianGrid />
+                <XAxis
+                  type='number'
+                  dataKey='x'
+                  name='X Position'
+                  unit='m'
+                  tickLine={false}
+                  axisLine={false}
+                  domain={[processedData.spatialBounds.minX, processedData.spatialBounds.maxX]}
+                />
+                <YAxis
+                  type='number'
+                  dataKey='y'
+                  name='Y Position'
+                  unit='m'
+                  tickLine={false}
+                  axisLine={false}
+                  domain={[processedData.spatialBounds.minY, processedData.spatialBounds.maxY]}
+                />
+                <ZAxis
+                  type='number'
+                  dataKey='z'
+                  range={[20, 200]}
+                  name='Height'
+                  unit='m'
+                />
+                <ChartTooltip
+                  cursor={{ strokeDasharray: '3 3' }}
+                  content={
+                    <ChartTooltipContent
+                      hideLabel
+                      formatter={(value, name, props) => (
+                        <div className='flex flex-col gap-1 min-w-[130px] text-xs'>
+                          {name === 'x' && (
+                            <div className='flex justify-between'>
+                              <span className='text-muted-foreground'>
+                                X Position:
+                              </span>
+                              <span className='font-medium'>{value}m</span>
+                            </div>
+                          )}
+                          {name === 'y' && (
+                            <div className='flex justify-between'>
+                              <span className='text-muted-foreground'>
+                                Y Position:
+                              </span>
+                              <span className='font-medium'>{value}m</span>
+                            </div>
+                          )}
+                          {name === 'z' && (
+                            <div className='flex justify-between'>
+                              <span className='text-muted-foreground'>
+                                Height:
+                              </span>
+                              <span className='font-medium'>{value}m</span>
+                            </div>
+                          )}
+                          {props.payload && (
+                            <>
+                              <div className='flex justify-between'>
+                                <span className='text-muted-foreground'>
+                                  Object ID:
+                                </span>
+                                <span className='font-medium'>
+                                  {props.payload.global_id}
+                                </span>
+                              </div>
+                              <div className='flex justify-between'>
+                                <span className='text-muted-foreground'>
+                                  Type:
+                                </span>
+                                <span className='font-medium'>
+                                  {props.payload.label}
+                                </span>
+                              </div>
+                              <div className='flex justify-between'>
+                                <span className='text-muted-foreground'>
+                                  Frame:
+                                </span>
+                                <span className='font-medium'>
+                                  {props.payload.frame}
+                                </span>
+                              </div>
+                              <div className='flex items-center gap-2'>
+                                <span className='text-muted-foreground'>
+                                  Color:
+                                </span>
+                                <div
+                                  className='w-3 h-3 rounded-full border border-border'
+                                  style={{
+                                    backgroundColor: props.payload.color,
+                                  }}
+                                />
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    />
+                  }
+                />
+                {/* Render individual scatter points for each object with their unique colors */}
+                {Array.from(processedData.objectColors.entries()).map(
+                  ([globalId, color]) => {
+                    const objectData = processedData.spatialData
+                      .filter((d) => d.global_id === globalId)
+                      .slice(0, 50); // Limit points per object for performance
+
+                    if (objectData.length === 0) return null;
+
+                    return (
+                      <Scatter
+                        key={globalId}
+                        data={objectData}
+                        fill={color}
+                        name={`Object ${globalId}`}
+                      />
+                    );
+                  }
+                )}
+              </ScatterChart>
+            </ChartContainer>
+          </TabsContent>
+
+          <TabsContent value='tracking' className='mt-6'>
+            <ChartContainer
+              config={chartConfig}
+              className='aspect-auto h-[300px] w-full'>
+              <LineChart data={processedData.trackingData.slice(0, 20)}>
+                <CartesianGrid vertical={false} />
+                <XAxis
+                  dataKey='global_id'
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={8}
+                  tickFormatter={(value) => `ID ${value}`}
+                />
+                <YAxis
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={8}
+                  label={{
+                    value: 'Consistency %',
+                    angle: -90,
+                    position: 'insideLeft',
                   }}
-                  indicator="dot"
                 />
-              }
-            />
-            <Area
-              dataKey="mobile"
-              type="natural"
-              fill="url(#fillMobile)"
-              stroke="var(--color-mobile)"
-              stackId="a"
-            />
-            <Area
-              dataKey="desktop"
-              type="natural"
-              fill="url(#fillDesktop)"
-              stroke="var(--color-desktop)"
-              stackId="a"
-            />
-          </AreaChart>
-        </ChartContainer>
+                <ChartTooltip
+                  content={
+                    <ChartTooltipContent
+                      labelFormatter={(value) => `Object ID: ${value}`}
+                      formatter={(value, name) => [
+                        `${value}${name === 'consistency' ? '%' : ''}`,
+                        name === 'consistency'
+                          ? 'Tracking Consistency'
+                          : name === 'duration'
+                          ? 'Duration (frames)'
+                          : 'Total Detections',
+                      ]}
+                    />
+                  }
+                />
+                <Line
+                  type='monotone'
+                  dataKey='consistency'
+                  stroke='rgb(107, 114, 128)'
+                  strokeWidth={2}
+                  dot={{ fill: 'rgb(107, 114, 128)' }}
+                />
+              </LineChart>
+            </ChartContainer>
+          </TabsContent>
+        </Tabs>
       </CardContent>
     </Card>
-  )
+  );
 }
