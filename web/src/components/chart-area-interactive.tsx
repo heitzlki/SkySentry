@@ -86,14 +86,13 @@ const chartConfig = {
 
 export function ChartAreaInteractive() {
   const isMobile = useIsMobile();
-  const [timeRange, setTimeRange] = React.useState('all');
   const [chartType, setChartType] = React.useState('temporal');
-  
+
   // Timeline slider state
   const [timelineProgress, setTimelineProgress] = React.useState([0]);
   const [isStreaming, setIsStreaming] = React.useState(false);
   const [streamingData, setStreamingData] = React.useState(detectionData);
-  
+
   // Autoplay state
   const [isAutoPlaying, setIsAutoPlaying] = React.useState(false);
   const [autoPlaySpeed, setAutoPlaySpeed] = React.useState(50); // milliseconds per frame
@@ -116,7 +115,9 @@ export function ChartAreaInteractive() {
     // Calculate the frame range based on timeline progress
     const maxFrame = Math.max(...streamingData.map((d: any) => d.frame || 0));
     const targetFrame = Math.floor((timelineProgress[0] / 100) * maxFrame);
-    const filteredData = streamingData.filter((d: any) => d.frame <= targetFrame);
+    const filteredData = streamingData.filter(
+      (d: any) => d.frame <= targetFrame
+    );
 
     // Generate unique colors for each global_id
     const uniqueGlobalIds = getUniqueGlobalIds(filteredData);
@@ -134,28 +135,35 @@ export function ChartAreaInteractive() {
         !isNaN(d.Zw)
     );
 
-    let spatialBounds = { minX: 0, maxX: 0, minY: 0, maxY: 0, minZ: 0, maxZ: 0 };
+    let spatialBounds = {
+      minX: 0,
+      maxX: 0,
+      minY: 0,
+      maxY: 0,
+      minZ: 0,
+      maxZ: 0,
+    };
     if (validSpatialData.length > 0) {
       const xValues = validSpatialData.map((d: any) => d.Xw);
       const yValues = validSpatialData.map((d: any) => d.Yw);
       const zValues = validSpatialData.map((d: any) => d.Zw);
-      
+
       const minX = Math.min(...xValues);
       const maxX = Math.max(...xValues);
       const minY = Math.min(...yValues);
       const maxY = Math.max(...yValues);
       const minZ = Math.min(...zValues);
       const maxZ = Math.max(...zValues);
-      
+
       // Calculate the maximum range to make it square
       const rangeX = maxX - minX;
       const rangeY = maxY - minY;
       const maxRange = Math.max(rangeX, rangeY);
-      
+
       // Center the smaller dimension
       const centerX = (minX + maxX) / 2;
       const centerY = (minY + maxY) / 2;
-      
+
       spatialBounds = {
         minX: centerX - maxRange / 2,
         maxX: centerX + maxRange / 2,
@@ -294,7 +302,7 @@ export function ChartAreaInteractive() {
       const response = await fetch('/api/detections/latest');
       if (response.ok) {
         const newData = await response.json();
-        setStreamingData(prevData => [...prevData, ...newData]);
+        setStreamingData((prevData) => [...prevData, ...newData]);
       }
     } catch (error) {
       console.error('Failed to fetch new detection data:', error);
@@ -306,9 +314,9 @@ export function ChartAreaInteractive() {
     if (autoPlayIntervalRef.current) {
       clearInterval(autoPlayIntervalRef.current);
     }
-    
+
     autoPlayIntervalRef.current = setInterval(() => {
-      setTimelineProgress(current => {
+      setTimelineProgress((current) => {
         const newProgress = current[0] + 1;
         if (newProgress >= 100) {
           // If we reach the end, either stop or start streaming
@@ -344,13 +352,13 @@ export function ChartAreaInteractive() {
   // Handle streaming effect
   useEffect(() => {
     let interval: NodeJS.Timeout;
-    
+
     if (isStreaming && timelineProgress[0] === 100) {
       interval = setInterval(() => {
         fetchNewData();
       }, 3000); // Poll every 3 seconds
     }
-    
+
     return () => {
       if (interval) {
         clearInterval(interval);
@@ -395,40 +403,20 @@ export function ChartAreaInteractive() {
     setTimelineProgress([0]);
     setIsStreaming(false);
     setIsAutoPlaying(false);
-};
+  };
 
   const stepBackward = () => {
-    setTimelineProgress(current => [Math.max(0, current[0] - 5)]);
+    setTimelineProgress((current) => [Math.max(0, current[0] - 5)]);
     setIsAutoPlaying(false);
   };
 
   const stepForward = () => {
-    setTimelineProgress(current => [Math.min(100, current[0] + 5)]);
+    setTimelineProgress((current) => [Math.min(100, current[0] + 5)]);
     setIsAutoPlaying(false);
   };
 
-  const filteredTemporalData = useMemo(() => {
-    if (timeRange === 'all' || processedData.temporalData.length === 0) {
-      return processedData.temporalData;
-    }
-
-    const dataLength = processedData.temporalData.length;
-    let sliceSize: number;
-
-    switch (timeRange) {
-      case 'recent':
-        sliceSize = Math.floor(dataLength * 0.2); // Last 20%
-        return processedData.temporalData.slice(-sliceSize);
-      case 'mid':
-        sliceSize = Math.floor(dataLength * 0.5); // Last 50%
-        return processedData.temporalData.slice(-sliceSize);
-      case 'early':
-        sliceSize = Math.floor(dataLength * 0.3); // First 30%
-        return processedData.temporalData.slice(0, sliceSize);
-      default:
-        return processedData.temporalData;
-    }
-  }, [processedData.temporalData, timeRange]);
+  // Use all temporal data by default (no filtering by time range)
+  const filteredTemporalData = processedData.temporalData;
 
   return (
     <Card className='@container/card'>
@@ -442,145 +430,108 @@ export function ChartAreaInteractive() {
             Object detection analytics
           </span>
         </CardDescription>
-        
+
         {/* Timeline Slider */}
-        <div className="space-y-3 pt-4 border-t">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">Timeline</span>
-            <div className="flex items-center gap-1">
+        <div className='space-y-3 pt-4 border-t'>
+          <div className='flex items-center justify-between'>
+            <span className='text-sm font-medium'>Timeline</span>
+            <div className='flex items-center gap-1'>
               <Button
-                variant="outline"
-                size="sm"
+                variant='outline'
+                size='sm'
                 onClick={stepBackward}
                 disabled={timelineProgress[0] === 0}
-                className="px-2"
-              >
-                <SkipBack className="h-3 w-3" />
+                className='px-2'>
+                <SkipBack className='h-3 w-3' />
               </Button>
-              
+
               <Button
-                variant={isAutoPlaying ? "destructive" : "default"}
-                size="sm"
+                variant={isAutoPlaying ? 'destructive' : 'default'}
+                size='sm'
                 onClick={toggleAutoPlay}
-                className="px-3"
-              >
+                className='px-3'>
                 {isAutoPlaying ? (
                   <>
-                    <Pause className="h-4 w-4 mr-1" />
+                    <Pause className='h-4 w-4 mr-1' />
                     Pause
                   </>
                 ) : (
                   <>
-                    <Play className="h-4 w-4 mr-1" />
+                    <Play className='h-4 w-4 mr-1' />
                     Play
                   </>
                 )}
               </Button>
-              
+
               <Button
-                variant="outline"
-                size="sm"
+                variant='outline'
+                size='sm'
                 onClick={stepForward}
                 disabled={timelineProgress[0] === 100}
-                className="px-2"
-              >
-                <SkipForward className="h-3 w-3" />
+                className='px-2'>
+                <SkipForward className='h-3 w-3' />
               </Button>
-              
+
               <Button
-                variant="outline"
-                size="sm"
+                variant='outline'
+                size='sm'
                 onClick={resetTimeline}
                 disabled={timelineProgress[0] === 0 && !isAutoPlaying}
-                className="px-2"
-              >
-                <RotateCcw className="h-4 w-4" />
+                className='px-2'>
+                <RotateCcw className='h-4 w-4' />
               </Button>
-              
+
               <Button
-                variant={isStreaming ? "destructive" : "secondary"}
-                size="sm"
+                variant={isStreaming ? 'destructive' : 'secondary'}
+                size='sm'
                 onClick={toggleStreaming}
                 disabled={timelineProgress[0] < 100 && !isStreaming}
-                className="px-3"
-              >
-                {isStreaming ? "Stop Stream" : "Stream"}
+                className='px-3'>
+                {isStreaming ? 'Stop Stream' : 'Stream'}
               </Button>
             </div>
           </div>
-          
+
           {/* Speed Control */}
-          <div className="flex items-center gap-3 px-2">
-            <span className="text-xs text-muted-foreground">Speed:</span>
-            <div className="flex items-center gap-2 flex-1">
-              <span className="text-xs">Slow</span>
+          <div className='flex items-center gap-3 px-2'>
+            <span className='text-xs text-muted-foreground'>Speed:</span>
+            <div className='flex items-center gap-2 flex-1'>
+              <span className='text-xs'>Slow</span>
               <Slider
                 value={[101 - autoPlaySpeed]}
                 onValueChange={(value) => setAutoPlaySpeed(101 - value[0])}
                 max={95}
                 min={5}
                 step={5}
-                className="flex-1 max-w-24"
+                className='flex-1 max-w-24'
               />
-              <span className="text-xs">Fast</span>
+              <span className='text-xs'>Fast</span>
             </div>
           </div>
-          
-          <div className="px-2">
+
+          <div className='px-2'>
             <Slider
               value={timelineProgress}
               onValueChange={handleTimelineChange}
               max={100}
               step={1}
-              className="w-full"
+              className='w-full'
             />
           </div>
-          
-          <div className="flex justify-between text-xs text-muted-foreground px-2">
+
+          <div className='flex justify-between text-xs text-muted-foreground px-2'>
             <span>Frame 0</span>
             <span>
-              Current: Frame {Math.floor((timelineProgress[0] / 100) * processedData.maxFrame)}
-              {isAutoPlaying && " (Playing)"}
-              {isStreaming && " (Live)"}
+              Current: Frame{' '}
+              {Math.floor((timelineProgress[0] / 100) * processedData.maxFrame)}
+              {isAutoPlaying && ' (Playing)'}
+              {isStreaming && ' (Live)'}
             </span>
             <span>Frame {processedData.maxFrame}</span>
           </div>
         </div>
-
-        <CardAction>
-          <div className='flex flex-col gap-2 @[767px]/card:flex-row'>
-            <ToggleGroup
-              type='single'
-              value={timeRange}
-              onValueChange={setTimeRange}
-              variant='outline'
-              className='hidden *:data-[slot=toggle-group-item]:!px-4 @[767px]/card:flex'>
-              <ToggleGroupItem value='all'>All Frames</ToggleGroupItem>
-              <ToggleGroupItem value='recent'>Recent</ToggleGroupItem>
-              <ToggleGroupItem value='early'>Early</ToggleGroupItem>
-            </ToggleGroup>
-            <Select value={timeRange} onValueChange={setTimeRange}>
-              <SelectTrigger
-                className='flex w-40 **:data-[slot=select-value]:block **:data-[slot=select-value]:truncate @[767px]/card:hidden'
-                size='sm'
-                aria-label='Select time range'>
-                <SelectValue placeholder='All Frames' />
-              </SelectTrigger>
-              <SelectContent className='rounded-xl'>
-                <SelectItem value='all' className='rounded-lg'>
-                  All Frames
-                </SelectItem>
-                <SelectItem value='recent' className='rounded-lg'>
-                  Recent
-                </SelectItem>
-                <SelectItem value='early' className='rounded-lg'>
-                  Early
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </CardAction>
       </CardHeader>
+
       <CardContent className='px-2 pt-4 sm:px-6 sm:pt-6'>
         <Tabs value={chartType} onValueChange={setChartType} className='w-full'>
           <TabsList className='grid w-full grid-cols-4'>
@@ -692,10 +643,26 @@ export function ChartAreaInteractive() {
             <ChartContainer
               config={chartConfig}
               className='aspect-square h-[400px] w-full'>
-              <ScatterChart 
+              <ScatterChart
                 data={processedData.spatialData.slice(0, 200)}
-                margin={{ top: 20, right: 20, bottom: 20, left: 20 }}
-              >
+                margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                <defs>
+                  {/* Define square dot shape */}
+                  <marker
+                    id='square-dot'
+                    markerWidth='4'
+                    markerHeight='4'
+                    refX='2'
+                    refY='2'>
+                    <rect
+                      x='0'
+                      y='0'
+                      width='4'
+                      height='4'
+                      fill='currentColor'
+                    />
+                  </marker>
+                </defs>
                 <CartesianGrid />
                 <XAxis
                   type='number'
@@ -704,7 +671,10 @@ export function ChartAreaInteractive() {
                   unit='m'
                   tickLine={false}
                   axisLine={false}
-                  domain={[processedData.spatialBounds.minX, processedData.spatialBounds.maxX]}
+                  domain={[
+                    processedData.spatialBounds.minX,
+                    processedData.spatialBounds.maxX,
+                  ]}
                 />
                 <YAxis
                   type='number'
@@ -713,12 +683,15 @@ export function ChartAreaInteractive() {
                   unit='m'
                   tickLine={false}
                   axisLine={false}
-                  domain={[processedData.spatialBounds.minY, processedData.spatialBounds.maxY]}
+                  domain={[
+                    processedData.spatialBounds.minY,
+                    processedData.spatialBounds.maxY,
+                  ]}
                 />
                 <ZAxis
                   type='number'
                   dataKey='z'
-                  range={[20, 200]}
+                  range={[16, 64]} // Smaller size range
                   name='Height'
                   unit='m'
                 />
@@ -779,14 +752,27 @@ export function ChartAreaInteractive() {
                                   {props.payload.frame}
                                 </span>
                               </div>
+                              <div className='flex justify-between'>
+                                <span className='text-muted-foreground'>
+                                  Age:
+                                </span>
+                                <span className='font-medium'>
+                                  {Math.max(
+                                    0,
+                                    processedData.maxFrame - props.payload.frame
+                                  )}{' '}
+                                  frames ago
+                                </span>
+                              </div>
                               <div className='flex items-center gap-2'>
                                 <span className='text-muted-foreground'>
                                   Color:
                                 </span>
                                 <div
-                                  className='w-3 h-3 rounded-full border border-border'
+                                  className='w-3 h-3 border border-border'
                                   style={{
                                     backgroundColor: props.payload.color,
+                                    opacity: props.payload.opacity || 1,
                                   }}
                                 />
                               </div>
@@ -797,12 +783,75 @@ export function ChartAreaInteractive() {
                     />
                   }
                 />
-                {/* Render individual scatter points for each object with their unique colors */}
+
+                {/* Render trajectory lines first (behind the points) */}
                 {Array.from(processedData.objectColors.entries()).map(
                   ([globalId, color]) => {
                     const objectData = processedData.spatialData
                       .filter((d) => d.global_id === globalId)
-                      .slice(0, 50); // Limit points per object for performance
+                      .sort((a, b) => a.frame - b.frame)
+                      .slice(0, 50);
+
+                    if (objectData.length < 2) return null;
+
+                    // Create path data for trajectory line
+                    const pathData = objectData
+                      .map((d, i) => {
+                        const x =
+                          ((d.x - processedData.spatialBounds.minX) /
+                            (processedData.spatialBounds.maxX -
+                              processedData.spatialBounds.minX)) *
+                          100;
+                        const y =
+                          ((d.y - processedData.spatialBounds.minY) /
+                            (processedData.spatialBounds.maxY -
+                              processedData.spatialBounds.minY)) *
+                          100;
+                        return `${i === 0 ? 'M' : 'L'} ${x} ${100 - y}`;
+                      })
+                      .join(' ');
+
+                    return (
+                      <svg
+                        key={`trajectory-${globalId}`}
+                        className='absolute inset-0 pointer-events-none'>
+                        <path
+                          d={pathData}
+                          stroke={color}
+                          strokeWidth='1'
+                          strokeOpacity='0.3'
+                          fill='none'
+                          strokeDasharray='2,2'
+                        />
+                      </svg>
+                    );
+                  }
+                )}
+
+                {/* Render individual scatter points for each object with their unique colors and fading */}
+                {Array.from(processedData.objectColors.entries()).map(
+                  ([globalId, color]) => {
+                    const objectData = processedData.spatialData
+                      .filter((d) => d.global_id === globalId)
+                      .slice(0, 50)
+                      .map((d) => {
+                        // Calculate opacity based on frame age
+                        const frameAge = processedData.maxFrame - d.frame;
+                        const maxAge = 30; // Fade over 30 frames
+                        const opacity = Math.max(
+                          0.2,
+                          1 - (frameAge / maxAge) * 0.8
+                        );
+
+                        return {
+                          ...d,
+                          opacity,
+                          // Adjust color with opacity
+                          colorWithOpacity: color
+                            .replace('rgb(', 'rgba(')
+                            .replace(')', `, ${opacity})`),
+                        };
+                      });
 
                     if (objectData.length === 0) return null;
 
@@ -812,6 +861,7 @@ export function ChartAreaInteractive() {
                         data={objectData}
                         fill={color}
                         name={`Object ${globalId}`}
+                        shape='square' // Use square shape instead of circle
                       />
                     );
                   }
