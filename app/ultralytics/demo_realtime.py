@@ -25,6 +25,7 @@ WIN  = "YOLOE • Live | Top-down (fading)"
 _global_rt = None
 _rt_lock = threading.Lock()
 
+
 def get_global_rt():
     """Get or create the global YoloeRealtime instance."""
     global _global_rt
@@ -147,11 +148,11 @@ def get_res_for_id(client_id):
         
         # Use the global YOLOE processor instance to maintain tracking state
         print(f"[DEBUG] Using global YOLOE processor for client {client_id}")
-        rt = get_global_rt()
         
         # Process the frame with lock to prevent concurrent access
         with _rt_lock:
             print(f"[DEBUG] Running YOLO detection on frame for client {client_id}")
+            rt = get_global_rt()
             json_list, _ = rt.process_frame(frame_np, return_vis=False)
         
         print(f"[DEBUG] YOLO processing complete for client {client_id}, detections: {len(json_list)}")
