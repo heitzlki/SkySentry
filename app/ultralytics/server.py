@@ -135,11 +135,13 @@ async def get_client_frame(
         response.raise_for_status()
         
         data = response.json()
-        if not data.get("success", False):
+        
+        # Check if we have image data (the backend doesn't send a 'success' field)
+        if not data.get("image"):
             return FrameResponse(
                 success=False,
                 client_id=client_id,
-                error=data.get("error", "No frame available")
+                error="No frame available"
             )
             
         return FrameResponse(
@@ -182,7 +184,9 @@ async def get_client_info(
         response.raise_for_status()
         
         data = response.json()
-        if not data.get("success", False):
+        
+        # Check if we have any data (the backend doesn't send a 'success' field)
+        if not data.get("clientId") and not data.get("timestamp"):
             raise HTTPException(
                 status_code=404, 
                 detail=f"No frame data available for client {client_id}"
